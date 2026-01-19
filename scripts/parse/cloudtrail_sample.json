@@ -1,0 +1,23 @@
+{
+  "Records": [
+    {
+      "eventTime": "2024-10-10T12:34:56Z",
+      "eventName": "ConsoleLogin",
+      "eventSource": "signin.amazonaws.com",
+      "eventType": "AwsConsoleSignIn",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "203.0.113.12",
+      "userAgent": "Mozilla/5.0",
+      "userIdentity": {
+        "type": "IAMUser",
+        "arn": "arn:aws:iam::123456789012:user/TestUser",
+        "accountId": "123456789012",
+        "principalId": "AIDAEXAMPLE",
+        "accessKeyId": "AKIAEXAMPLE"
+      },
+      "responseElements": null,
+      "requestID": "abcd-1234",
+      "eventID": "evt-5678"
+    }
+  ]
+}
