@@ -1,6 +1,6 @@
 {
   "name": "Anom.ai Dev",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 
   "features": {
     "ghcr.io/devcontainers/features/aws-cli:1": {},
@@ -16,7 +16,7 @@
     }
   },
 
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y jq unzip && python -m pip install --upgrade pip",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends jq unzip && python -m pip install --no-cache-dir --upgrade pip",
 
   "customizations": {
     "vscode": {
