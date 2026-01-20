@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-# ---------- Helpers: safe getters + identity parsing ----------
+# ---------- Helpers ----------
 
 def deep_get(d: Dict[str, Any], path: List[str], default=None):
     cur: Any = d
@@ -20,8 +20,7 @@ def deep_get(d: Dict[str, Any], path: List[str], default=None):
 
 def parse_assumed_role_arn(user_arn: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """
-    For assumed-role ARN format:
-      arn:aws:sts::<acct>:assumed-role/<roleName>/<sessionName>
+    arn:aws:sts::<acct>:assumed-role/<roleName>/<sessionName>
     Returns (roleName, sessionName).
     """
     if not user_arn or ":assumed-role/" not in user_arn:
@@ -52,65 +51,42 @@ def load_json(path: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def normalize_mfa(value: Any) -> Optional[bool]:
-    """
-    CloudTrail often provides mfaAuthenticated as "true"/"false" (string).
-    Normalize to boolean when possible.
-    """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        v = value.strip().lower()
-        if v == "true":
-            return True
-        if v == "false":
-            return False
-        return None
-    # unknown type
-    return None
-
-
-# ---------- Normalization (fields you care about) ----------
+# ---------- Normalization ----------
 
 def normalize_record(
     record: Dict[str, Any],
     *,
     mask_keys: bool = True,
-    drop_heavy_fields: bool = False,
+    keep_heavy_fields: bool = False
 ) -> Dict[str, Any]:
     user_identity = record.get("userIdentity", {}) or {}
     user_arn = user_identity.get("arn")
-
     role_name, session_name = parse_assumed_role_arn(user_arn)
 
     access_key = user_identity.get("accessKeyId")
     if mask_keys:
         access_key = mask_access_key(access_key)
 
+    # Raw IAM username (often missing for SSO/AssumedRole)
+    raw_user_name = user_identity.get("userName")
+
+    # mfaAuthenticated often appears as "true"/"false" strings
+    mfa_raw = deep_get(user_identity, ["sessionContext", "attributes", "mfaAuthenticated"])
+    if isinstance(mfa_raw, str):
+        mfa_authenticated = (mfa_raw.lower() == "true")
+    else:
+        mfa_authenticated = bool(mfa_raw) if mfa_raw is not None else None
+
     principal_id = user_identity.get("principalId") or ""
     principal_suffix = principal_id.split(":")[-1] if ":" in principal_id else None
 
-    # IAM username (only when it's truly there)
-    iam_user_name = user_identity.get("userName")
-
-    # Best "actor" field for AnomAI (who is doing the action)
-    # Priority: IAM userName -> assumed-role sessionName -> principalId suffix -> ARN fallback
+    # Best-effort "human actor" for anomaly baselines
     actor = (
-        iam_user_name
-        or session_name
-        or principal_suffix
-        or user_arn
+        raw_user_name            # IAM user
+        or session_name           # assumed-role session (SSO human)
+        or principal_suffix       # often contains username/session
+        or user_arn               # last resort
     )
-
-    # mfaAuthenticated (normalize to bool)
-    mfa_raw = deep_get(user_identity, ["sessionContext", "attributes", "mfaAuthenticated"])
-    mfa_authenticated = normalize_mfa(mfa_raw)
-
-    # Optional heavy fields
-    request_params = None if drop_heavy_fields else record.get("requestParameters")
-    response_elements = None if drop_heavy_fields else record.get("responseElements")
 
     normalized = {
         # Identity
@@ -122,13 +98,11 @@ def normalize_record(
         "sessionIssuerArn": deep_get(user_identity, ["sessionContext", "sessionIssuer", "arn"]),
         "roleName": role_name,
         "sessionName": session_name,
-
-        # Identity (normalized)
-        "userName": iam_user_name,   # only populated for IAM users
-        "actor": actor,              # best-effort who performed the action
+        "userName": raw_user_name,   # keep raw, may be null
+        "actor": actor,              # what you baseline on
         "mfaAuthenticated": mfa_authenticated,
 
-        # Core event info
+        # Core event
         "eventName": record.get("eventName"),
         "eventSource": record.get("eventSource"),
         "eventType": record.get("eventType"),
@@ -143,21 +117,22 @@ def normalize_record(
         "userAgent": record.get("userAgent"),
         "vpcEndpointId": record.get("vpcEndpointId"),
 
-        # Errors / security context
+        # Errors / context
         "errorCode": record.get("errorCode"),
         "errorMessage": record.get("errorMessage"),
         "additionalEventData": record.get("additionalEventData"),
         "tlsDetails": record.get("tlsDetails"),
-
-        # Optional payloads
-        "requestParameters": request_params,
-        "responseElements": response_elements,
     }
+
+    # Heavy fields (off by default)
+    if keep_heavy_fields:
+        normalized["requestParameters"] = record.get("requestParameters")
+        normalized["responseElements"] = record.get("responseElements")
 
     return normalized
 
 
-# ---------- Input discovery (file or folder) ----------
+# ---------- Input discovery ----------
 
 def iter_input_files(input_path: str) -> Iterable[str]:
     if os.path.isfile(input_path):
@@ -170,13 +145,13 @@ def iter_input_files(input_path: str) -> Iterable[str]:
                 yield os.path.join(root, name)
 
 
-# ---------- Main parsing loop ----------
+# ---------- Parse + output ----------
 
 def parse_cloudtrail_file(
     path: str,
     *,
     mask_keys: bool,
-    drop_heavy_fields: bool,
+    keep_heavy_fields: bool
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     try:
         data = load_json(path)
@@ -184,13 +159,11 @@ def parse_cloudtrail_file(
         if not isinstance(records, list):
             return [], f"{path}: 'Records' is not a list"
 
-        normalized = []
+        out: List[Dict[str, Any]] = []
         for rec in records:
             if isinstance(rec, dict):
-                normalized.append(
-                    normalize_record(rec, mask_keys=mask_keys, drop_heavy_fields=drop_heavy_fields)
-                )
-        return normalized, None
+                out.append(normalize_record(rec, mask_keys=mask_keys, keep_heavy_fields=keep_heavy_fields))
+        return out, None
     except Exception as e:
         return [], f"{path}: {e}"
 
@@ -204,13 +177,7 @@ def write_jsonl(events: Iterable[Dict[str, Any]], out_path: str) -> int:
     return count
 
 
-def print_summary(
-    total: int,
-    errors: List[str],
-    top_sources: Counter,
-    top_names: Counter,
-    top_actors: Counter,
-):
+def print_summary(total: int, errors: List[str], top_sources: Counter, top_names: Counter, top_actors: Counter):
     print("\n--- Summary ---")
     print(f"Total normalized events: {total}")
     print(f"Files with errors: {len(errors)}")
@@ -233,16 +200,34 @@ def print_summary(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Parse AWS CloudTrail logs (.json or .json.gz) into normalized JSONL."
-    )
-    parser.add_argument("input", help="Path to a CloudTrail file OR a folder containing CloudTrail logs")
+    parser = argparse.ArgumentParser(description="Parse AWS CloudTrail logs (.json/.json.gz) into normalized JSONL.")
+    parser.add_argument("input", help="Path to a CloudTrail file or a folder containing CloudTrail logs")
     parser.add_argument("-o", "--out", default="normalized.jsonl", help="Output JSONL file path")
     parser.add_argument("--no-mask-keys", action="store_true", help="Do NOT mask accessKeyId (not recommended)")
-    parser.add_argument("--drop-heavy-fields", action="store_true",
-                        help="Drop requestParameters/responseElements to reduce output size")
+
+    # Heavy fields flags
+    parser.add_argument(
+        "--drop-heavy-fields",
+        action="store_true",
+        default=True,
+        help="Drop requestParameters/responseElements (default: true)"
+    )
+    parser.add_argument(
+        "--keep-heavy-fields",
+        action="store_true",
+        default=False,
+        help="Keep requestParameters/responseElements (default: false)"
+    )
+
     parser.add_argument("--print-sample", type=int, default=3, help="Print first N normalized events to stdout")
     args = parser.parse_args()
+
+    # Resolve keep/drop (keep wins if both set)
+    keep_heavy_fields = bool(args.keep_heavy_fields)
+    if keep_heavy_fields:
+        drop_heavy_fields = False
+    else:
+        drop_heavy_fields = True  # default behavior
 
     mask_keys = not args.no_mask_keys
 
@@ -259,11 +244,7 @@ def main():
         raise SystemExit(1)
 
     for fp in files:
-        events, err = parse_cloudtrail_file(
-            fp,
-            mask_keys=mask_keys,
-            drop_heavy_fields=args.drop_heavy_fields
-        )
+        events, err = parse_cloudtrail_file(fp, mask_keys=mask_keys, keep_heavy_fields=keep_heavy_fields)
         if err:
             errors.append(err)
             continue
@@ -271,16 +252,14 @@ def main():
         for ev in events:
             all_events.append(ev)
             if ev.get("eventSource"):
-                top_sources[str(ev["eventSource"])] += 1
+                top_sources[ev["eventSource"]] += 1
             if ev.get("eventName"):
-                top_names[str(ev["eventName"])] += 1
+                top_names[ev["eventName"]] += 1
             if ev.get("actor"):
                 top_actors[str(ev["actor"])] += 1
 
-    # Write output JSONL
     total = write_jsonl(all_events, args.out)
 
-    # Print sample
     sample_n = max(0, args.print_sample)
     if sample_n > 0:
         print("\n--- Sample normalized events ---")
@@ -289,6 +268,10 @@ def main():
 
     print_summary(total, errors, top_sources, top_names, top_actors)
     print(f"\nWrote JSONL: {args.out}")
+    if drop_heavy_fields:
+        print("Heavy fields: DROPPED (requestParameters/responseElements)")
+    else:
+        print("Heavy fields: KEPT (requestParameters/responseElements)")
 
 
 if __name__ == "__main__":
