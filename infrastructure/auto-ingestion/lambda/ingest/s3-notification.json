@@ -1,0 +1,17 @@
+{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "anomai-cloudtrail-ingest",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-2:643766343043:function:anomai-ingest-cloudtrail",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            { "Name": "prefix", "Value": "AWSLogs/" },
+            { "Name": "suffix", "Value": ".json.gz" }
+          ]
+        }
+      }
+    }
+  ]
+}

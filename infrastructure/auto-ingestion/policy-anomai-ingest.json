@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadCloudTrailLogsFromS3",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::anomai-cloudtrail-logs-dev/AWSLogs/*"
+    },
+    {
+      "Sid": "WriteNormalizedEventsToDynamoDB",
+      "Effect": "Allow",
+      "Action": ["dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:DescribeTable"],
+      "Resource": "arn:aws:dynamodb:*:*:table/anomai_events"
+    }
+  ]
+}
