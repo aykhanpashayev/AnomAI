@@ -266,3 +266,10 @@ This document defines detection logic for IAM-related anomaly features based on 
 > "User {actor} performed {count} CloudTrail-related read-only operations ({event_names}) within {window}, indicating possible log or trail reconnaissance."
 
 ---
+
+## Validation with Sample normalized.jsonl
+
+- ExcessiveListingActivity → Triggered
+- APICallSpike → Triggered
+- CloudTrailReconActivity → Triggered
+- Others → Not triggered due to missing event types
