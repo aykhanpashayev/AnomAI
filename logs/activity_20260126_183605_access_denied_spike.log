@@ -1,0 +1,19 @@
+[2026-01-26T18:36:05Z] Starting generate_activity.sh
+[2026-01-26T18:36:05Z] scenario=access_denied_spike duration=30s rate=90/min regions=us-east-1,us-west-2 bucket=anomai-cloudtrail-logs-dev
+[2026-01-26T18:36:05Z] log_file=./logs/activity_20260126_183605_access_denied_spike.log
+[2026-01-26T18:36:05Z] Checking AWS credentials...
+[2026-01-26T18:36:06Z] Scenario: access_denied_spike (intentionally failing calls)
+[2026-01-26T18:36:06Z] tick: access_denied_spike
+[2026-01-26T18:36:08Z] tick: access_denied_spike
+[2026-01-26T18:36:10Z] tick: access_denied_spike
+[2026-01-26T18:36:12Z] tick: access_denied_spike
+[2026-01-26T18:36:14Z] tick: access_denied_spike
+[2026-01-26T18:36:16Z] tick: access_denied_spike
+[2026-01-26T18:36:18Z] tick: access_denied_spike
+[2026-01-26T18:36:20Z] tick: access_denied_spike
+[2026-01-26T18:36:23Z] tick: access_denied_spike
+[2026-01-26T18:36:25Z] tick: access_denied_spike
+[2026-01-26T18:36:27Z] tick: access_denied_spike
+[2026-01-26T18:36:29Z] tick: access_denied_spike
+[2026-01-26T18:36:31Z] tick: access_denied_spike
+[2026-01-26T18:36:34Z] tick: access_denied_spike
