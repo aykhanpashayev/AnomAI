@@ -1,0 +1,48 @@
+{
+  "event_id": "evt-20260130-00123",
+  "timestamp": "2026-01-30T20:55:00Z",
+  "input_event": {
+    "eventName": "ConsoleLogin",
+    "sourceIPAddress": "203.0.113.5",
+    "userAgent": "Mozilla/5.0",
+    "additionalEventData": {
+      "MFAUsed": "No"
+    }
+  },
+  "normalized_event": {
+    "action": "ConsoleLogin",
+    "ip": "203.0.113.5",
+    "mfa_used": false,
+    "user_agent": "Mozilla/5.0",
+    "geo_location": "Unusual"
+  },
+  "rule_score": 0.72,
+  "model_score": 0.84,
+  "final_risk_score": 0.79,
+  "triggered_features": [
+    {
+      "feature": "unusual_geo",
+      "value": "203.0.113.5",
+      "signal": 0.9
+    },
+    {
+      "feature": "mfa_not_used",
+      "value": false,
+      "signal": 0.7
+    },
+    {
+      "feature": "new_user_agent",
+      "value": "Mozilla/5.0",
+      "signal": 0.4
+    }
+  ],
+  "embedding_vector": [
+    0.12, 0.04, 0.88, 0.33, 0.21, 0.09, 0.55, 0.44
+  ],
+  "embedding_deviation": 0.41,
+  "explanation": [
+    "Login originated from a country the user has never logged in from before.",
+    "MFA was not used during the login attempt.",
+    "The user agent used in this login has not been seen for this account previously."
+  ]
+}
