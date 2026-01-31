@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Risk Scoring API Response",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Unique identifier for the CloudTrail event."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the event."
+    },
+    "input_event": {
+      "type": "object",
+      "description": "Raw or normalized CloudTrail event used as model input."
+    },
+    "normalized_event": {
+      "type": "object",
+      "description": "Standardized event representation used for feature extraction."
+    },
+    "rule_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Score derived from rule-based anomaly detection."
+    },
+    "model_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Score derived from embedding similarity or model-based detection."
+    },
+    "final_risk_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Combined risk score from rule-based and model-based components."
+    },
+    "triggered_features": {
+      "type": "array",
+      "description": "List of anomaly features that contributed to the risk score.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": { "type": "string" },
+          "value": {},
+          "signal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["feature", "signal"]
+      }
+    },
+    "embedding_vector": {
+      "type": "array",
+      "description": "Optional embedding vector representing the event.",
+      "items": { "type": "number" }
+    },
+    "embedding_deviation": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Distance between current embedding and baseline embedding."
+    },
+    "explanation": {
+      "type": "array",
+      "description": "Human-readable explanations describing why the event is risky.",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "event_id",
+    "timestamp",
+    "normalized_event",
+    "rule_score",
+    "model_score",
+    "final_risk_score",
+    "triggered_features",
+    "explanation"
+  ]
+}
