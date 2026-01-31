@@ -98,7 +98,7 @@ The dataset does not include events related to authentication, access key creati
 The normalized output demonstrates that the parsing pipeline provides all required fields for reconnaissance‑related anomaly detection. The event structure is suitable for downstream detection logic and supports the feature engineering framework defined in this directory.
 
 
-Week 3 Summary – AI Model Research & Risk Scoring Integration
+## Week 3 Summary – AI Model Research & Risk Scoring Integration （Cheng Zhang）
 Overview
 During Week 3, the focus shifted from rule‑based anomaly feature development (Weeks 1–2) into the integration of AI‑assisted scoring, embedding design, and the creation of a complete end‑to‑end pipeline. The team established the foundation for combining rule‑based logic with model‑based scoring and prepared the data structures required for the upcoming UI implementation.
 
