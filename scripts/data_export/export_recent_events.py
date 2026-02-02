@@ -5,7 +5,7 @@ from decimal import Decimal
 TABLE_NAME = "anomai_events"
 OUTPUT_FILE = "sample_events.json"
 REGION_NAME = "us-east-2"
-MAX_EVENTS = 50
+MAX_EVENTS = 100
 
 #convert DynamoDB decimal to float/int for JSON
 def convert_decimal(obj):
