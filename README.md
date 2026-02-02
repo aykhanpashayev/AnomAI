@@ -18,3 +18,10 @@ Auto ingestion using Lambda functions enabled. From now on when CloudTrail Uploa
 
 Research are continuing and finding free API key for AI added to research
 ```
+
+## Third week of the project 1/26/2026 to 2/2/2026
+```
+Test actor role and activity generator script created. It's perfectly running and creating logs such as login from different region, making spikes and a lot of login attempts.
+
+API reseach fully completed.
+```

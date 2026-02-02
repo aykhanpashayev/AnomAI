@@ -1,0 +1,41 @@
+[2026-02-02T20:33:38Z] Starting generate_activity.sh
+[2026-02-02T20:33:38Z] scenario=burst_api_calls duration=120s rate=180/min regions=us-east-1,us-west-2 bucket=anomai-cloudtrail-logs-dev
+[2026-02-02T20:33:38Z] log_file=./logs/activity_20260202_203338_burst_api_calls.log
+[2026-02-02T20:33:38Z] Checking AWS credentials...
+[2026-02-02T20:33:39Z] Scenario: burst_api_calls (rate spike via Describe* loops)
+[2026-02-02T20:33:39Z] tick: burst_api_calls
+[2026-02-02T20:33:43Z] tick: burst_api_calls
+[2026-02-02T20:33:47Z] tick: burst_api_calls
+[2026-02-02T20:33:50Z] tick: burst_api_calls
+[2026-02-02T20:33:53Z] tick: burst_api_calls
+[2026-02-02T20:33:57Z] tick: burst_api_calls
+[2026-02-02T20:34:00Z] tick: burst_api_calls
+[2026-02-02T20:34:04Z] tick: burst_api_calls
+[2026-02-02T20:34:07Z] tick: burst_api_calls
+[2026-02-02T20:34:10Z] tick: burst_api_calls
+[2026-02-02T20:34:14Z] tick: burst_api_calls
+[2026-02-02T20:34:17Z] tick: burst_api_calls
+[2026-02-02T20:34:20Z] tick: burst_api_calls
+[2026-02-02T20:34:23Z] tick: burst_api_calls
+[2026-02-02T20:34:27Z] tick: burst_api_calls
+[2026-02-02T20:34:30Z] tick: burst_api_calls
+[2026-02-02T20:34:34Z] tick: burst_api_calls
+[2026-02-02T20:34:37Z] tick: burst_api_calls
+[2026-02-02T20:34:41Z] tick: burst_api_calls
+[2026-02-02T20:34:44Z] tick: burst_api_calls
+[2026-02-02T20:34:47Z] tick: burst_api_calls
+[2026-02-02T20:34:51Z] tick: burst_api_calls
+[2026-02-02T20:34:54Z] tick: burst_api_calls
+[2026-02-02T20:34:57Z] tick: burst_api_calls
+[2026-02-02T20:35:01Z] tick: burst_api_calls
+[2026-02-02T20:35:04Z] tick: burst_api_calls
+[2026-02-02T20:35:07Z] tick: burst_api_calls
+[2026-02-02T20:35:10Z] tick: burst_api_calls
+[2026-02-02T20:35:14Z] tick: burst_api_calls
+[2026-02-02T20:35:17Z] tick: burst_api_calls
+[2026-02-02T20:35:20Z] tick: burst_api_calls
+[2026-02-02T20:35:23Z] tick: burst_api_calls
+[2026-02-02T20:35:27Z] tick: burst_api_calls
+[2026-02-02T20:35:30Z] tick: burst_api_calls
+[2026-02-02T20:35:34Z] tick: burst_api_calls
+[2026-02-02T20:35:37Z] tick: burst_api_calls

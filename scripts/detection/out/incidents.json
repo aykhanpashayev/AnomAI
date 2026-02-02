@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-02-02T20:32:20.495263Z",
+  "source": "dynamodb_scan",
+  "region": "us-east-2",
+  "table": "anomai_events",
+  "events_scanned": 2000,
+  "window_minutes": 60,
+  "threshold": 5,
+  "incident_count": 1,
+  "incidents": [
+    {
+      "type": "access_denied_spike",
+      "severity": "high",
+      "title": "AccessDenied(CreateUser) spike: 15 events in window",
+      "window_start": "2026-02-02T19:32:20.495263+00:00",
+      "count": 15,
+      "threshold": 5,
+      "by_actor": {
+        "test": 15
+      },
+      "by_region": {
+        "us-east-1": 15
+      },
+      "samples": [
+        {
+          "eventTime": "2026-02-02T20:05:00Z",
+          "awsRegion": "us-east-1",
+          "eventName": "CreateUser",
+          "actor": "test",
+          "errorCode": "AccessDenied",
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062699-25488 because no identity-based policy allows the iam:CreateUser action"
+        },
+        {
+          "eventTime": "2026-02-02T20:05:02Z",
+          "awsRegion": "us-east-1",
+          "eventName": "CreateUser",
+          "actor": "test",
+          "errorCode": "AccessDenied",
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062702-6418 because no identity-based policy allows the iam:CreateUser action"
+        },
+        {
+          "eventTime": "2026-02-02T20:05:09Z",
+          "awsRegion": "us-east-1",
+          "eventName": "CreateUser",
+          "actor": "test",
+          "errorCode": "AccessDenied",
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062708-9177 because no identity-based policy allows the iam:CreateUser action"
+        },
+        {
+          "eventTime": "2026-02-02T20:05:13Z",
+          "awsRegion": "us-east-1",
+          "eventName": "CreateUser",
+          "actor": "test",
+          "errorCode": "AccessDenied",
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062712-12351 because no identity-based policy allows the iam:CreateUser action"
+        },
+        {
+          "eventTime": "2026-02-02T20:05:15Z",
+          "awsRegion": "us-east-1",
+          "eventName": "CreateUser",
+          "actor": "test",
+          "errorCode": "AccessDenied",
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062715-9748 because no identity-based policy allows the iam:CreateUser action"
+        }
+      ],
+      "recommendation": "Validate whether this principal should perform these actions. If not, investigate automation/abuse and lock down IAM."
+    }
+  ]
+}

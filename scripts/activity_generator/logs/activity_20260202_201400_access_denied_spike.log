@@ -1,0 +1,56 @@
+[2026-02-02T20:14:00Z] Starting generate_activity.sh
+[2026-02-02T20:14:00Z] scenario=access_denied_spike duration=30s rate=60/min regions=us-east-1,us-west-2 bucket=anomai-cloudtrail-logs-dev
+[2026-02-02T20:14:00Z] log_file=./logs/activity_20260202_201400_access_denied_spike.log
+[2026-02-02T20:14:00Z] Checking AWS credentials...
+[2026-02-02T20:14:01Z] Scenario: access_denied_spike (intentionally failing calls)
+[2026-02-02T20:14:01Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063241-29985 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:05Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063245-2368 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:08Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063248-30498 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:11Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063251-13423 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:14Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063254-970 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:17Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063257-15498 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:20Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063260-16833 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:24Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063264-7903 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:27Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063267-24308 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:30Z] tick: access_denied_spike
+
+An error occurred (AccessDenied) when calling the CreateUser operation: User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770063270-21347 because no identity-based policy allows the iam:CreateUser action
+
+An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: "ami-00000000000000000" (expecting "ami-...")
+[2026-02-02T20:14:33Z] Done.
