@@ -1,23 +1,17 @@
 {
   "name": "Anom.ai Dev",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-
   "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": { "installZsh": true },
     "ghcr.io/devcontainers/features/aws-cli:1": {},
     "ghcr.io/devcontainers/features/terraform:1": {},
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.11"
-    },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    },
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": true
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.11" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/apt-packages:1": {
+      "packages": "jq unzip"
     }
   },
-
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends jq unzip && python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir boto3",
-
+  "postCreateCommand": "python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir --timeout 60 --retries 5 boto3",
   "customizations": {
     "vscode": {
       "extensions": [
