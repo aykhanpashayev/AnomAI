@@ -1,69 +1,101 @@
 {
-  "generated_at": "2026-02-02T20:32:20.495263Z",
+  "generated_at": "2026-02-03T13:50:10.895236Z",
   "source": "dynamodb_scan",
   "region": "us-east-2",
   "table": "anomai_events",
-  "events_scanned": 2000,
-  "window_minutes": 60,
-  "threshold": 5,
+  "events_scanned": 500,
+  "window_minutes": 1440,
+  "thresholds": {
+    "generic_spike": 1,
+    "burst_threshold": 300,
+    "iam_threshold": 10
+  },
+  "baseline_regions": [],
   "incident_count": 1,
   "incidents": [
     {
       "type": "access_denied_spike",
-      "severity": "high",
-      "title": "AccessDenied(CreateUser) spike: 15 events in window",
-      "window_start": "2026-02-02T19:32:20.495263+00:00",
-      "count": 15,
-      "threshold": 5,
+      "severity": "low",
+      "title": "Denied spike: 7 AccessDenied/Unauthorized errors in window",
+      "window_start": "2026-02-02T13:50:10.895236+00:00",
+      "count": 7,
+      "threshold": 1,
       "by_actor": {
-        "test": 15
+        "test": 5,
+        "Charlie": 1,
+        "resource-explorer-2": 1
       },
       "by_region": {
-        "us-east-1": 15
+        "us-east-1": 7
+      },
+      "by_eventName": {
+        "CreateUser": 5,
+        "GetCostForecast": 1,
+        "GetExternalModels": 1
       },
       "samples": [
         {
-          "eventTime": "2026-02-02T20:05:00Z",
+          "eventTime": "2026-02-02T16:55:34Z",
           "awsRegion": "us-east-1",
-          "eventName": "CreateUser",
-          "actor": "test",
+          "eventName": "GetCostForecast",
+          "eventSource": "ce.amazonaws.com",
+          "actor": "Charlie",
+          "sourceIPAddress": "75.33.221.6",
           "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062699-25488 because no identity-based policy allows the iam:CreateUser action"
+          "errorMessage": "IAM user access not activated"
+        },
+        {
+          "eventTime": "2026-02-02T18:26:09Z",
+          "awsRegion": "us-east-1",
+          "eventName": "GetExternalModels",
+          "eventSource": "frauddetector.amazonaws.com",
+          "actor": "resource-explorer-2",
+          "sourceIPAddress": "resource-explorer-2.amazonaws.com",
+          "errorCode": "AccessDenied",
+          "errorMessage": ""
         },
         {
           "eventTime": "2026-02-02T20:05:02Z",
           "awsRegion": "us-east-1",
           "eventName": "CreateUser",
+          "eventSource": "iam.amazonaws.com",
           "actor": "test",
+          "sourceIPAddress": "51.8.152.67",
           "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062702-6418 because no identity-based policy allows the iam:CreateUser action"
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062702-6418 because no identity-based po\u2026"
         },
         {
           "eventTime": "2026-02-02T20:05:09Z",
           "awsRegion": "us-east-1",
           "eventName": "CreateUser",
+          "eventSource": "iam.amazonaws.com",
           "actor": "test",
+          "sourceIPAddress": "51.8.152.67",
           "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062708-9177 because no identity-based policy allows the iam:CreateUser action"
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062708-9177 because no identity-based po\u2026"
         },
         {
           "eventTime": "2026-02-02T20:05:13Z",
           "awsRegion": "us-east-1",
           "eventName": "CreateUser",
+          "eventSource": "iam.amazonaws.com",
           "actor": "test",
+          "sourceIPAddress": "51.8.152.67",
           "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062712-12351 because no identity-based policy allows the iam:CreateUser action"
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062712-12351 because no identity-based p\u2026"
         },
         {
-          "eventTime": "2026-02-02T20:05:15Z",
+          "eventTime": "2026-02-02T20:05:28Z",
           "awsRegion": "us-east-1",
           "eventName": "CreateUser",
+          "eventSource": "iam.amazonaws.com",
           "actor": "test",
+          "sourceIPAddress": "51.8.152.67",
           "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062715-9748 because no identity-based policy allows the iam:CreateUser action"
+          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062727-28548 because no identity-based p\u2026"
         }
       ],
-      "recommendation": "Validate whether this principal should perform these actions. If not, investigate automation/abuse and lock down IAM."
+      "recommendation": "Confirm the failing principal is expected. If not, investigate credential misuse or broken automation and tighten IAM policies."
     }
   ]
 }

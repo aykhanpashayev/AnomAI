@@ -53,4 +53,3 @@ aws sts get-caller-identity
 ```
 
 ## This step is running the script which named generate_activity.sh, located in scripts/activity_generator folder
-

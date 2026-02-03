@@ -40,17 +40,27 @@ def _safe_str(v) -> str:
 
 
 def _make_item(ev: Dict[str, Any], source_bucket: str, source_key: str) -> Dict[str, Any]:
+    """
+    Convert a normalized CloudTrail event into a DynamoDB item.
+
+    Adds a derived attribute: day_bucket = "YYYY-MM-DD"
+    This is used later for efficient time-based queries via a GSI.
+    """
     # DynamoDB PK must be present. Use CloudTrail eventID if available.
     event_id = _safe_str(ev.get("eventID"))
     if not event_id:
         event_id = f"NOEVENTID#{_safe_str(ev.get('eventTime'))}#{_safe_str(ev.get('requestID'))}"
+
+    ev_time = _safe_str(ev.get("eventTime"))  # e.g. "2026-02-02T19:59:56Z"
+    day_bucket = ev_time[:10] if len(ev_time) >= 10 else ""  # e.g. "2026-02-02"
 
     ev_json = json.dumps(ev, ensure_ascii=False)
 
     return {
         "event_id": {"S": event_id},
         "actor": {"S": _safe_str(ev.get("actor"))},
-        "eventTime": {"S": _safe_str(ev.get("eventTime"))},
+        "eventTime": {"S": ev_time},
+        "day_bucket": {"S": day_bucket},  # ✅ NEW FIELD
         "eventName": {"S": _safe_str(ev.get("eventName"))},
         "eventSource": {"S": _safe_str(ev.get("eventSource"))},
         "awsRegion": {"S": _safe_str(ev.get("awsRegion"))},
@@ -71,7 +81,7 @@ def _batch_write(items: List[Dict[str, Any]]) -> int:
 
         resp = ddb.batch_write_item(RequestItems=req)
 
-        # retry unprocessed items up to 5 times
+        # Retry unprocessed items up to 5 times
         unprocessed = resp.get("UnprocessedItems", {})
         tries = 0
         while unprocessed and tries < 5:
@@ -119,7 +129,7 @@ def lambda_handler(event, context):
             ev = normalize_record(
                 r,
                 mask_keys=MASK_KEYS,
-                keep_heavy_fields=KEEP_HEAVY_FIELDS
+                keep_heavy_fields=KEEP_HEAVY_FIELDS,
             )
 
             # Skip ingestion Lambda's own CloudTrail events (prevents dataset pollution)
