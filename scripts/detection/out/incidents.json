@@ -1,101 +1,25 @@
 {
-  "generated_at": "2026-02-03T13:50:10.895236Z",
-  "source": "dynamodb_scan",
+  "generated_at": "2026-02-03T18:31:03.937418Z",
+  "source": "dynamodb_day_bucket_scan",
   "region": "us-east-2",
   "table": "anomai_events",
-  "events_scanned": 500,
-  "window_minutes": 1440,
-  "thresholds": {
-    "generic_spike": 1,
-    "burst_threshold": 300,
-    "iam_threshold": 10
+  "lookback_days": 30,
+  "max_events": 5000,
+  "detect_window_minutes": 10,
+  "detect_window": {
+    "start": "2026-02-03T17:58:58Z",
+    "end": "2026-02-03T18:08:58Z",
+    "anchored_to": "newest_event_in_dynamodb"
   },
-  "baseline_regions": [],
-  "incident_count": 1,
-  "incidents": [
-    {
-      "type": "access_denied_spike",
-      "severity": "low",
-      "title": "Denied spike: 7 AccessDenied/Unauthorized errors in window",
-      "window_start": "2026-02-02T13:50:10.895236+00:00",
-      "count": 7,
-      "threshold": 1,
-      "by_actor": {
-        "test": 5,
-        "Charlie": 1,
-        "resource-explorer-2": 1
-      },
-      "by_region": {
-        "us-east-1": 7
-      },
-      "by_eventName": {
-        "CreateUser": 5,
-        "GetCostForecast": 1,
-        "GetExternalModels": 1
-      },
-      "samples": [
-        {
-          "eventTime": "2026-02-02T16:55:34Z",
-          "awsRegion": "us-east-1",
-          "eventName": "GetCostForecast",
-          "eventSource": "ce.amazonaws.com",
-          "actor": "Charlie",
-          "sourceIPAddress": "75.33.221.6",
-          "errorCode": "AccessDenied",
-          "errorMessage": "IAM user access not activated"
-        },
-        {
-          "eventTime": "2026-02-02T18:26:09Z",
-          "awsRegion": "us-east-1",
-          "eventName": "GetExternalModels",
-          "eventSource": "frauddetector.amazonaws.com",
-          "actor": "resource-explorer-2",
-          "sourceIPAddress": "resource-explorer-2.amazonaws.com",
-          "errorCode": "AccessDenied",
-          "errorMessage": ""
-        },
-        {
-          "eventTime": "2026-02-02T20:05:02Z",
-          "awsRegion": "us-east-1",
-          "eventName": "CreateUser",
-          "eventSource": "iam.amazonaws.com",
-          "actor": "test",
-          "sourceIPAddress": "51.8.152.67",
-          "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062702-6418 because no identity-based po\u2026"
-        },
-        {
-          "eventTime": "2026-02-02T20:05:09Z",
-          "awsRegion": "us-east-1",
-          "eventName": "CreateUser",
-          "eventSource": "iam.amazonaws.com",
-          "actor": "test",
-          "sourceIPAddress": "51.8.152.67",
-          "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062708-9177 because no identity-based po\u2026"
-        },
-        {
-          "eventTime": "2026-02-02T20:05:13Z",
-          "awsRegion": "us-east-1",
-          "eventName": "CreateUser",
-          "eventSource": "iam.amazonaws.com",
-          "actor": "test",
-          "sourceIPAddress": "51.8.152.67",
-          "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062712-12351 because no identity-based p\u2026"
-        },
-        {
-          "eventTime": "2026-02-02T20:05:28Z",
-          "awsRegion": "us-east-1",
-          "eventName": "CreateUser",
-          "eventSource": "iam.amazonaws.com",
-          "actor": "test",
-          "sourceIPAddress": "51.8.152.67",
-          "errorCode": "AccessDenied",
-          "errorMessage": "User: arn:aws:sts::643766343043:assumed-role/anomai-test-actor/test is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::643766343043:user/anomai-should-fail-1770062727-28548 because no identity-based p\u2026"
-        }
-      ],
-      "recommendation": "Confirm the failing principal is expected. If not, investigate credential misuse or broken automation and tighten IAM policies."
-    }
-  ]
+  "events_kept": 5000,
+  "events_in_detect_window": 12,
+  "thresholds_auto": {
+    "denied_threshold": 5,
+    "invalid_ami_threshold": 1,
+    "iam_threshold": 3,
+    "signin_threshold": 3,
+    "burst_threshold": 300
+  },
+  "incident_count": 0,
+  "incidents": []
 }
