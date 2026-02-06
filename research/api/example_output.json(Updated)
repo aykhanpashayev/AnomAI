@@ -1,0 +1,61 @@
+[
+  {
+    "incident_id": "inc_20260203_001",
+    "incident_type": "AccessDeniedSpike",
+    "actor": "Aykhan",
+    "timestamp_start": "2026-02-03T18:36:00Z",
+    "timestamp_end": "2026-02-03T18:37:00Z",
+    "severity": "high",
+    "rule_score": 80,
+    "final_risk_score": 80,
+    "triggered_features": ["ExcessiveAccessDenied"],
+    "explanation": {
+      "summary": "High number of AccessDenied errors in a short time window.",
+      "recommendation": "Confirm permissions and investigate whether this is probing or misconfigured automation."
+    },
+    "evidence": {
+      "access_denied_count": 18,
+      "window_seconds": 60,
+      "top_event_names": ["CreateUser", "RunInstances"]
+    }
+  },
+  {
+    "incident_id": "inc_20260203_002",
+    "incident_type": "NewRegion",
+    "actor": "Charlie",
+    "timestamp_start": "2026-02-03T19:10:00Z",
+    "timestamp_end": "2026-02-03T19:11:00Z",
+    "severity": "medium",
+    "rule_score": 60,
+    "final_risk_score": 60,
+    "triggered_features": ["FirstTimeRegionUse"],
+    "explanation": {
+      "summary": "Activity detected in a region not previously used by this actor.",
+      "recommendation": "Verify whether this region usage is expected or part of new deployment activity."
+    },
+    "evidence": {
+      "new_region": "ap-southeast-1",
+      "previous_regions": ["us-east-1"]
+    }
+  },
+  {
+    "incident_id": "inc_20260203_003",
+    "incident_type": "ApiBurst",
+    "actor": "Alex",
+    "timestamp_start": "2026-02-03T20:00:00Z",
+    "timestamp_end": "2026-02-03T20:00:30Z",
+    "severity": "high",
+    "rule_score": 90,
+    "final_risk_score": 90,
+    "triggered_features": ["ApiRateSpike"],
+    "explanation": {
+      "summary": "Unusual spike in API calls within a short time window.",
+      "recommendation": "Check for automation loops or compromised credentials triggering excessive API calls."
+    },
+    "evidence": {
+      "api_call_count": 320,
+      "window_seconds": 30,
+      "top_event_names": ["ListBuckets", "DescribeInstances"]
+    }
+  }
+]
