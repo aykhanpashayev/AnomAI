@@ -1,82 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Risk Scoring API Response",
+  "title": "Incident Object (MVP)",
   "type": "object",
   "properties": {
-    "event_id": {
-      "type": "string",
-      "description": "Unique identifier for the CloudTrail event."
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time",
-      "description": "Timestamp of the event."
-    },
-    "input_event": {
-      "type": "object",
-      "description": "Raw or normalized CloudTrail event used as model input."
-    },
-    "normalized_event": {
-      "type": "object",
-      "description": "Standardized event representation used for feature extraction."
-    },
-    "rule_score": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Score derived from rule-based anomaly detection."
-    },
-    "model_score": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Score derived from embedding similarity or model-based detection."
-    },
-    "final_risk_score": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Combined risk score from rule-based and model-based components."
-    },
+    "incident_id": { "type": "string" },
+    "incident_type": { "type": "string" },
+    "actor": { "type": "string" },
+    "timestamp_start": { "type": "string", "format": "date-time" },
+    "timestamp_end": { "type": "string", "format": "date-time" },
+    "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+    "rule_score": { "type": "number" },
+    "final_risk_score": { "type": "number" },
     "triggered_features": {
       "type": "array",
-      "description": "List of anomaly features that contributed to the risk score.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "feature": { "type": "string" },
-          "value": {},
-          "signal": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
-        },
-        "required": ["feature", "signal"]
-      }
-    },
-    "embedding_vector": {
-      "type": "array",
-      "description": "Optional embedding vector representing the event.",
-      "items": { "type": "number" }
-    },
-    "embedding_deviation": {
-      "type": "number",
-      "minimum": 0,
-      "description": "Distance between current embedding and baseline embedding."
+      "items": { "type": "string" }
     },
     "explanation": {
-      "type": "array",
-      "description": "Human-readable explanations describing why the event is risky.",
-      "items": { "type": "string" }
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "recommendation": { "type": "string" }
+      },
+      "required": ["summary"]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "access_denied_count": { "type": "number" },
+        "window_seconds": { "type": "number" },
+        "top_event_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
     }
   },
   "required": [
-    "event_id",
-    "timestamp",
-    "normalized_event",
+    "incident_id",
+    "incident_type",
+    "actor",
+    "timestamp_start",
+    "timestamp_end",
+    "severity",
     "rule_score",
-    "model_score",
     "final_risk_score",
     "triggered_features",
     "explanation"
