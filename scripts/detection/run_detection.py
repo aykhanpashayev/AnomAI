@@ -1,24 +1,43 @@
 #!/usr/bin/env python3
 """
-AnomAI Detection (Easy Mode)
-===========================
+AnomAI SOC-Style Detection (Easy Mode) — DynamoDB → Incidents
+============================================================
 
-Goal: one command, works every time.
-- Reads CloudTrail-derived events from DynamoDB (using day_bucket)
-- Normalizes events
-- Anchors detection window to the NEWEST event in DynamoDB (avoids ingestion delay issues)
-- Auto-picks thresholds (no manual tuning needed)
-- Writes out/incidents.json + prints a short console summary
+Goal (what you asked for):
+- You run ONE command (or even no args).
+- Script scans your DynamoDB table, looks back ~30 days, and finds incidents
+  across ALL events (not just spikes).
+- Outputs a clean incident timeline + JSON file.
+- On the next run, it marks incidents as "new" if they happened after the last run.
+
+Works with your schema:
+PK: event_id
+Attrs: eventTime, day_bucket, awsRegion, eventName, eventSource, actor, sourceIPAddress, event_json, ...
+
+Default behavior:
+- table: anomai_events
+- region: us-east-2 (or AWS_REGION/AWS_DEFAULT_REGION)
+- lookback: 30 days
+- scans ALL items in that lookback range (your table ~9k items -> fine)
+- detection window: 10 minutes (SOC-like short windows for spikes)
+- auto-thresholds (no manual thresholds needed)
 
 Run:
-  ./run_detection.py --region us-east-2
+  ./scripts/detection/run_detection.py
+or:
+  ./scripts/detection/run_detection.py --region us-east-2
+  ./scripts/detection/run_detection.py --debug
+
+Output:
+  out/incidents.json
+  out/detection_state.json   (stores watermark so next run can mark new incidents)
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,12 +46,27 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 
 
+# ----------------------------
+# Defaults (easy for your scope)
+# ----------------------------
+
+DEFAULT_REGION = "us-east-2"
+DEFAULT_TABLE = "anomai_events"
+
+LOOKBACK_DAYS = 30
+DETECT_WINDOW_MINUTES = 10
+
+OUT_PATH = "out/incidents.json"
+STATE_PATH = "out/detection_state.json"
+
+
 # -------------------------
-# Time utils
+# Small helpers
 # -------------------------
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
 
 def parse_iso8601(s: Any) -> Optional[datetime]:
     if not isinstance(s, str) or not s.strip():
@@ -45,9 +79,15 @@ def parse_iso8601(s: Any) -> Optional[datetime]:
     except Exception:
         return None
 
-def day_bucket_from_dt(dt: datetime) -> str:
-    # YYYY-MM-DD
-    return dt.date().isoformat()
+
+def iso_z(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+
 
 def safe_json_loads(s: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(s, str) or not s.strip():
@@ -57,12 +97,72 @@ def safe_json_loads(s: Any) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-def ensure_parent_dir(path: str) -> None:
-    parent = os.path.dirname(path) or "."
-    os.makedirs(parent, exist_ok=True)
 
-def is_in_window(t: Optional[datetime], window_start: datetime, window_end: datetime) -> bool:
-    return t is not None and (window_start <= t <= window_end)
+def human_age(now: datetime, t: datetime) -> str:
+    """Return '2m ago', '5h ago', 'yesterday', '6d ago' style strings."""
+    delta = now - t
+    sec = int(delta.total_seconds())
+    if sec < 0:
+        sec = abs(sec)
+        if sec < 60:
+            return f"in {sec}s"
+        if sec < 3600:
+            return f"in {sec // 60}m"
+        if sec < 86400:
+            return f"in {sec // 3600}h"
+        return f"in {sec // 86400}d"
+
+    if sec < 60:
+        return f"{sec}s ago"
+    if sec < 3600:
+        return f"{sec // 60}m ago"
+    if sec < 86400:
+        return f"{sec // 3600}h ago"
+    days = sec // 86400
+    if days == 1:
+        return "yesterday"
+    return f"{days}d ago"
+
+
+def minute_bucket(dt: datetime) -> datetime:
+    """Floor datetime to the minute."""
+    return dt.replace(second=0, microsecond=0)
+
+
+def get_arg_value(flag: str) -> Optional[str]:
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return None
+
+
+def has_flag(flag: str) -> bool:
+    return flag in sys.argv
+
+
+# -------------------------
+# State (watermark)
+# -------------------------
+
+def read_state_watermark(path: str) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        w = obj.get("last_seen_event_time")
+        return str(w) if w else None
+    except Exception:
+        return None
+
+
+def write_state_watermark(path: str, last_seen_event_time: str) -> None:
+    ensure_parent_dir(path)
+    obj = {
+        "last_seen_event_time": last_seen_event_time,
+        "updated_at": iso_z(utc_now()),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
 
 
 # -------------------------
@@ -71,6 +171,7 @@ def is_in_window(t: Optional[datetime], window_start: datetime, window_end: date
 
 @dataclass
 class Event:
+    event_id: str
     event_time_str: str
     event_time: Optional[datetime]
     day_bucket: str
@@ -84,21 +185,25 @@ class Event:
     raw: Dict[str, Any]
 
 
-def normalize_raw_items(raw_items: List[Dict[str, Any]]) -> List[Event]:
-    events: List[Event] = []
+def normalize_items(raw_items: List[Dict[str, Any]]) -> List[Event]:
+    out: List[Event] = []
 
     for it in raw_items:
-        event_time_str = it.get("eventTime") or ""
+        event_id = str(it.get("event_id") or it.get("eventID") or it.get("id") or "")
+        event_time_str = str(it.get("eventTime") or "")
         event_time = parse_iso8601(event_time_str)
 
-        # day_bucket: prefer stored value, else derive
-        day_bucket = it.get("day_bucket") or (day_bucket_from_dt(event_time) if event_time else "")
+        day_bucket_val = it.get("day_bucket") or ""
+        day_bucket = str(day_bucket_val) if day_bucket_val else ""
+        # If day_bucket missing, compute from eventTime (safe fallback)
+        if not day_bucket and event_time:
+            day_bucket = event_time.date().isoformat()
 
-        aws_region = it.get("awsRegion") or "unknown"
-        event_name = it.get("eventName") or "unknown"
-        event_source = it.get("eventSource") or "unknown"
-        actor = it.get("actor") or "unknown"
-        source_ip = it.get("sourceIPAddress") or "unknown"
+        aws_region = str(it.get("awsRegion") or "unknown")
+        event_name = str(it.get("eventName") or "unknown")
+        event_source = str(it.get("eventSource") or "unknown")
+        actor = str(it.get("actor") or "unknown")
+        source_ip = str(it.get("sourceIPAddress") or "unknown")
 
         ev_obj = safe_json_loads(it.get("event_json") or "")
         error_code = ""
@@ -107,129 +212,161 @@ def normalize_raw_items(raw_items: List[Dict[str, Any]]) -> List[Event]:
             error_code = str(ev_obj.get("errorCode") or "")
             error_message = str(ev_obj.get("errorMessage") or "")
 
-        events.append(Event(
-            event_time_str=str(event_time_str),
+        out.append(Event(
+            event_id=event_id,
+            event_time_str=event_time_str,
             event_time=event_time,
-            day_bucket=str(day_bucket),
-            aws_region=str(aws_region),
-            event_name=str(event_name),
-            event_source=str(event_source),
-            actor=str(actor),
-            source_ip=str(source_ip),
+            day_bucket=day_bucket,
+            aws_region=aws_region,
+            event_name=event_name,
+            event_source=event_source,
+            actor=actor,
+            source_ip=source_ip,
             error_code=error_code,
             error_message=error_message,
             raw=it,
         ))
 
-    # sort newest -> oldest (for easier “latest” behavior)
-    events.sort(key=lambda e: e.event_time or datetime(1970, 1, 1, tzinfo=timezone.utc), reverse=True)
-    return events
+    out.sort(key=lambda e: e.event_time or datetime(1970, 1, 1, tzinfo=timezone.utc))
+    return out
 
 
 # -------------------------
-# DynamoDB loading (day_bucket scan)
+# DynamoDB scanning
 # -------------------------
 
-def ddb_scan_day_bucket(
-    *,
-    region: str,
-    table_name: str,
-    lookback_days: int,
-    max_events: int,
-    debug: bool,
-) -> List[Dict[str, Any]]:
+def resolve_region(passed_region: Optional[str]) -> Optional[str]:
+    if passed_region and passed_region.strip():
+        return passed_region.strip()
+
+    env_region = (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "").strip()
+    if env_region:
+        return env_region
+
+    # Try boto3 session default (sometimes set by AWS SDK config)
+    try:
+        s = boto3.session.Session()
+        if s.region_name:
+            return s.region_name
+    except Exception:
+        pass
+
+    # Fall back to our default for your project
+    return DEFAULT_REGION
+
+
+def scan_last_days(table_name: str, region: str, lookback_days: int, max_items: Optional[int], debug: bool) -> List[Dict[str, Any]]:
     """
-    Scan and keep only items where day_bucket is in [today-lookback_days .. today].
-    Then return most recent up to max_events (still a scan, but filtered).
+    Scans ALL items but server-filters to last N days using day_bucket (YYYY-MM-DD).
+    For your table size (~9k), this is fine.
+
+    max_items:
+      None => no cap (scan everything in lookback range)
+      int  => stop after N returned items
     """
     session = boto3.session.Session(region_name=region)
     ddb = session.resource("dynamodb")
     table = ddb.Table(table_name)
 
-    now = utc_now()
-    start_day = day_bucket_from_dt(now - timedelta(days=lookback_days))
-    end_day = day_bucket_from_dt(now)
+    cutoff_day = (utc_now() - timedelta(days=lookback_days)).date().isoformat()
 
-    # We scan pages and keep items in range.
-    items_kept: List[Dict[str, Any]] = []
+    items: List[Dict[str, Any]] = []
     last_key = None
     page = 0
 
-    # Scan in chunks (DynamoDB scan is not ordered)
+    # FilterExpression reduces returned items; Scan still reads behind the scenes,
+    # but for your scale it's OK.
+    filter_expr = Attr("day_bucket").gte(cutoff_day)
+
     while True:
         page += 1
-        kwargs: Dict[str, Any] = {"Limit": 500}
-
-        # FilterExpression (server-side) to reduce returned data
-        kwargs["FilterExpression"] = Attr("day_bucket").between(start_day, end_day)
-
+        kwargs: Dict[str, Any] = {
+            "FilterExpression": filter_expr,
+        }
         if last_key:
             kwargs["ExclusiveStartKey"] = last_key
 
         resp = table.scan(**kwargs)
         got = resp.get("Items", [])
-        items_kept.extend(got)
+        items.extend(got)
 
         if debug:
-            print(f"[DEBUG] scan page={page} got={len(got)} total_kept={len(items_kept)}")
+            print(f"[DEBUG] scan page={page} got={len(got)} total_returned={len(items)} cutoff_day={cutoff_day}")
+
+        if max_items is not None and len(items) >= max_items:
+            items = items[:max_items]
+            break
 
         last_key = resp.get("LastEvaluatedKey")
         if not last_key:
             break
 
-    # We only want newest max_events, but scan returns unsorted.
-    # Sort by eventTime string (ISO) descending; missing times sink to bottom.
-    def keyfunc(x: Dict[str, Any]) -> str:
-        return str(x.get("eventTime") or "")
+    if debug and items:
+        days = [it.get("day_bucket", "") for it in items if it.get("day_bucket")]
+        if days:
+            print(f"[DEBUG] DynamoDB scan: returned={len(items)} day_bucket_range={min(days)}..{max(days)}")
 
-    items_kept.sort(key=keyfunc, reverse=True)
-    items_kept = items_kept[:max_events]
-
-    if debug:
-        rng = f"{start_day}..{end_day}"
-        print(f"[DEBUG] DynamoDB day_bucket scan: table={table_name} region={region} items_received={len(items_kept)} range={rng}")
-
-    return items_kept
+    return items
 
 
 # -------------------------
-# Auto thresholds (no user knobs)
+# Counting + auto thresholds
 # -------------------------
 
-def auto_thresholds(events_in_window: int) -> Dict[str, int]:
+def count_by(items: List[str]) -> Dict[str, int]:
+    m: Dict[str, int] = {}
+    for x in items:
+        m[x] = m.get(x, 0) + 1
+    return dict(sorted(m.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def top_n(d: Dict[str, int], n: int = 8) -> Dict[str, int]:
+    return dict(list(d.items())[:n])
+
+
+def build_minute_bins(events: List[Event], start: datetime, end: datetime) -> Dict[datetime, List[Event]]:
     """
-    Pick thresholds that scale with volume but stay sane for small windows.
+    Bin events into minute buckets, only within [start, end].
     """
-    denied = max(5, int(events_in_window * 0.03))          # 3% of window volume or 5
-    invalid_ami = 1                                        # any invalid AMI is interesting
-    iam = max(3, int(events_in_window * 0.005))            # 0.5% or 3
-    signin = 3                                             # basic
-    burst = max(300, int(events_in_window * 0.25))         # 25% of total window or 300
-    return {
-        "denied_threshold": denied,
-        "invalid_ami_threshold": invalid_ami,
-        "iam_threshold": iam,
-        "signin_threshold": signin,
-        "burst_threshold": burst,
-    }
+    bins: Dict[datetime, List[Event]] = {}
+    for e in events:
+        if not e.event_time:
+            continue
+        if e.event_time < start or e.event_time > end:
+            continue
+        b = minute_bucket(e.event_time)
+        bins.setdefault(b, []).append(e)
+    return bins
+
+
+def compute_baseline_threshold(series: List[int], hard_min: int, multiplier: float = 3.0) -> int:
+    """
+    Simple "no-math-libs" baseline:
+    threshold = max(hard_min, median + multiplier * IQR-ish)
+
+    We avoid fancy stats here to keep it stable and predictable.
+    """
+    if not series:
+        return hard_min
+    s = sorted(series)
+    n = len(s)
+    median = s[n // 2]
+    q1 = s[n // 4]
+    q3 = s[(3 * n) // 4]
+    iqr = max(0, q3 - q1)
+    thr = int(median + multiplier * iqr)
+    return max(hard_min, thr)
 
 
 # -------------------------
-# Incident helpers
+# Incident builders
 # -------------------------
 
-def top_n_counts(values: List[str], n: int = 5) -> Dict[str, int]:
-    c: Dict[str, int] = {}
-    for v in values:
-        c[v] = c.get(v, 0) + 1
-    return dict(sorted(c.items(), key=lambda x: x[1], reverse=True)[:n])
-
-def sample_events(events: List[Event], max_samples: int = 6) -> List[Dict[str, Any]]:
-    out = []
+def compact_samples(events: List[Event], max_samples: int = 6) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     for e in events[:max_samples]:
         out.append({
             "eventTime": e.event_time_str,
-            "day_bucket": e.day_bucket,
             "awsRegion": e.aws_region,
             "eventName": e.event_name,
             "eventSource": e.event_source,
@@ -240,7 +377,37 @@ def sample_events(events: List[Event], max_samples: int = 6) -> List[Dict[str, A
         })
     return out
 
-def severity_from_count(count: int, *, high: int, medium: int) -> str:
+
+def make_incident(
+    *,
+    inc_type: str,
+    severity: str,
+    title: str,
+    first_seen: datetime,
+    last_seen: datetime,
+    count: int,
+    evidence: Dict[str, Any],
+    samples: List[Dict[str, Any]],
+    recommendation: str,
+    is_new: bool,
+    now: datetime,
+) -> Dict[str, Any]:
+    return {
+        "type": inc_type,
+        "severity": severity,
+        "title": title,
+        "first_seen": iso_z(first_seen),
+        "last_seen": iso_z(last_seen),
+        "age": human_age(now, last_seen),
+        "count": count,
+        "is_new": is_new,
+        "evidence": evidence,
+        "samples": samples,
+        "recommendation": recommendation,
+    }
+
+
+def severity_scale(count: int, medium: int, high: int) -> str:
     if count >= high:
         return "high"
     if count >= medium:
@@ -249,258 +416,571 @@ def severity_from_count(count: int, *, high: int, medium: int) -> str:
 
 
 # -------------------------
-# Detectors
+# Detectors (SOC-style)
 # -------------------------
 
-def detect_access_denied_spike(events: List[Event], window_start: datetime, window_end: datetime, threshold: int) -> Optional[Dict[str, Any]]:
-    recent = [e for e in events if is_in_window(e.event_time, window_start, window_end)]
-    hits = [e for e in recent if ("accessdenied" in e.error_code.lower() or "unauthorized" in e.error_code.lower())]
-
-    if len(hits) < threshold:
-        return None
-
-    sev = severity_from_count(len(hits), high=max(20, threshold * 3), medium=max(10, threshold * 2))
-    return {
-        "type": "access_denied_spike",
-        "severity": sev,
-        "title": f"Access denied spike: {len(hits)} denied errors in window",
-        "window_start": window_start.isoformat(),
-        "window_end": window_end.isoformat(),
-        "count": len(hits),
-        "threshold": threshold,
-        "by_actor": top_n_counts([e.actor for e in hits]),
-        "by_region": top_n_counts([e.aws_region for e in hits]),
-        "by_eventName": top_n_counts([e.event_name for e in hits]),
-        "samples": sample_events(hits),
-        "recommendation": "If unexpected: investigate the principal + source IP, and check for broken automation or credential misuse.",
-    }
-
-def detect_invalid_ami(events: List[Event], window_start: datetime, window_end: datetime, threshold: int) -> Optional[Dict[str, Any]]:
-    recent = [e for e in events if is_in_window(e.event_time, window_start, window_end)]
-    hits = [e for e in recent if e.event_name.lower() == "runinstances" and e.error_code.lower() == "invalidamiid.malformed"]
-
-    if len(hits) < threshold:
-        return None
-
-    sev = "medium" if len(hits) < 5 else "high"
-    return {
-        "type": "invalid_ami_attempts",
-        "severity": sev,
-        "title": f"Invalid AMI attempts: {len(hits)} RunInstances InvalidAMIID.Malformed",
-        "window_start": window_start.isoformat(),
-        "window_end": window_end.isoformat(),
-        "count": len(hits),
-        "threshold": threshold,
-        "by_actor": top_n_counts([e.actor for e in hits]),
-        "by_region": top_n_counts([e.aws_region for e in hits]),
-        "samples": sample_events(hits),
-        "recommendation": "Could be broken automation or probing. Verify who ran it and why.",
-    }
-
-def detect_sensitive_iam_ops(events: List[Event], window_start: datetime, window_end: datetime, threshold: int) -> Optional[Dict[str, Any]]:
-    sensitive = {
-        "createuser", "createaccesskey", "putuserpolicy", "attachuserpolicy",
-        "attachgrouppolicy", "attachrolepolicy", "addusertogroup",
-        "updateloginprofile", "createpolicy", "createpolicyversion",
-        "setdefaultpolicyversion", "passrole",
-    }
-    recent = [e for e in events if is_in_window(e.event_time, window_start, window_end)]
-    hits = [e for e in recent if e.event_name.lower() in sensitive]
-
-    if len(hits) < threshold:
-        return None
-
-    sev = severity_from_count(len(hits), high=max(10, threshold * 3), medium=max(5, threshold * 2))
-    return {
-        "type": "sensitive_iam_activity",
-        "severity": sev,
-        "title": f"Sensitive IAM activity: {len(hits)} ops in window",
-        "window_start": window_start.isoformat(),
-        "window_end": window_end.isoformat(),
-        "count": len(hits),
-        "threshold": threshold,
-        "by_actor": top_n_counts([e.actor for e in hits]),
-        "by_region": top_n_counts([e.aws_region for e in hits]),
-        "by_eventName": top_n_counts([e.event_name for e in hits]),
-        "samples": sample_events(hits),
-        "recommendation": "If unexpected: investigate privilege escalation or compromised admin credentials.",
-    }
-
-def detect_api_burst_by_actor(events: List[Event], window_start: datetime, window_end: datetime, threshold: int) -> Optional[Dict[str, Any]]:
-    recent = [e for e in events if is_in_window(e.event_time, window_start, window_end)]
-    if not recent:
-        return None
-
-    counts: Dict[str, int] = {}
-    for e in recent:
-        counts[e.actor] = counts.get(e.actor, 0) + 1
-
-    actor, count = max(counts.items(), key=lambda x: x[1])
-    if count < threshold:
-        return None
-
-    hits = [e for e in recent if e.actor == actor]
-    sev = severity_from_count(count, high=max(800, threshold * 3), medium=max(300, threshold * 2))
-    return {
-        "type": "api_burst",
-        "severity": sev,
-        "title": f"API burst: {actor} made {count} calls in window",
-        "window_start": window_start.isoformat(),
-        "window_end": window_end.isoformat(),
-        "count": count,
-        "threshold": threshold,
-        "by_region": top_n_counts([e.aws_region for e in hits]),
-        "by_eventName": top_n_counts([e.event_name for e in hits]),
-        "samples": sample_events(hits),
-        "recommendation": "If not expected automation: investigate for scripted abuse and lock down credentials.",
-    }
+SENSITIVE_IAM = {
+    "createuser",
+    "createaccesskey",
+    "putuserpolicy",
+    "attachuserpolicy",
+    "attachgrouppolicy",
+    "attachrolepolicy",
+    "addusertogroup",
+    "updateloginprofile",
+    "createpolicy",
+    "createpolicyversion",
+    "setdefaultpolicyversion",
+    "passrole",
+    "updateassumerolepolicy",
+    "putrolepolicy",
+}
 
 
-# -------------------------
-# Console summary (SOC vibe)
-# -------------------------
+def is_denied(e: Event) -> bool:
+    c = (e.error_code or "").lower()
+    return ("accessdenied" in c) or ("unauthorized" in c)
 
-def print_soc_summary(*, events_kept: int, newest: Optional[str], oldest: Optional[str],
-                      window_start: datetime, window_end: datetime,
-                      incidents: List[Dict[str, Any]]) -> None:
-    print("\n=== AnomAI Detection Summary ===")
-    print(f"events_kept: {events_kept}")
-    if newest and oldest:
-        print(f"time_range: newest={newest} oldest={oldest}")
-    print(f"detect_window: {window_start.isoformat()} .. {window_end.isoformat()}")
-    print(f"incidents: {len(incidents)}")
 
-    if incidents:
-        print("\nINCIDENTS:")
-        for i, inc in enumerate(incidents, 1):
-            print(f"{i}. [{inc['severity'].upper()}] {inc['type']} — {inc['title']}")
-    print("")
+def is_invalid_ami(e: Event) -> bool:
+    return (e.event_name or "").lower() == "runinstances" and (e.error_code or "").lower() == "invalidamiid.malformed"
+
+
+def is_signin_failure(e: Event) -> bool:
+    # CloudTrail sign-in failures commonly show these, but formats vary.
+    src = (e.event_source or "").lower()
+    name = (e.event_name or "").lower()
+    code = (e.error_code or "").lower()
+    return (
+        "signin.amazonaws.com" in src
+        or name in {"consolelogin", "credentialchallenge"}
+        or "failedauthentication" in code
+        or "invalid" in code and "token" in code
+    )
+
+
+def detect_spike_family(
+    events: List[Event],
+    *,
+    now: datetime,
+    last_seen_dt: Optional[datetime],
+    window_minutes: int,
+    inc_type: str,
+    title_prefix: str,
+    match_fn,
+    hard_min_threshold: int,
+    sev_medium: int,
+    sev_high: int,
+    recommendation: str,
+    debug: bool,
+) -> List[Dict[str, Any]]:
+    """
+    Generic spike detector:
+    - Bins events per minute across the whole lookback range
+    - Builds a baseline threshold from minute counts
+    - Slides a window (10 minutes) and flags windows that exceed threshold
+    - Produces "incident clusters" (merged adjacent windows)
+    """
+    # We only consider events with timestamps
+    ev = [e for e in events if e.event_time]
+    if not ev:
+        return []
+
+    start = ev[0].event_time  # type: ignore[assignment]
+    end = ev[-1].event_time   # type: ignore[assignment]
+    assert start and end
+
+    # Bins for matched events
+    matched = [e for e in ev if match_fn(e)]
+    if not matched:
+        return []
+
+    # Build per-minute counts for matched events
+    min_bins = build_minute_bins(matched, start, end)
+    all_minutes = sorted(min_bins.keys())
+    series = [len(min_bins[m]) for m in all_minutes]
+
+    threshold = compute_baseline_threshold(series, hard_min_threshold, multiplier=3.0)
+
+    if debug:
+        print(f"[DEBUG] {inc_type}: matched_events={len(matched)} minute_bins={len(all_minutes)} auto_threshold={threshold}")
+
+    # Sliding window over minutes: sum counts in last N minutes
+    window = timedelta(minutes=window_minutes)
+
+    # We'll compute "window_count" by summing minute bins in the window.
+    # For speed with small data, brute force is fine.
+    flagged_windows: List[Tuple[datetime, datetime, int, List[Event]]] = []
+    for anchor in all_minutes:
+        w_start = anchor
+        w_end = anchor + window
+        window_events: List[Event] = []
+        cnt = 0
+        for m in all_minutes:
+            if m < w_start:
+                continue
+            if m > w_end:
+                break
+            bucket_events = min_bins.get(m, [])
+            cnt += len(bucket_events)
+            window_events.extend(bucket_events)
+
+        if cnt >= threshold:
+            flagged_windows.append((w_start, w_end, cnt, window_events))
+
+    if not flagged_windows:
+        return []
+
+    # Merge adjacent/overlapping windows into incident clusters
+    flagged_windows.sort(key=lambda x: x[0])
+    clusters: List[Tuple[datetime, datetime, List[Event]]] = []
+    cur_s, cur_e, _, cur_events = flagged_windows[0]
+    cur_set = list(cur_events)
+
+    for w_s, w_e, _, w_events in flagged_windows[1:]:
+        if w_s <= cur_e:  # overlap / touch
+            if w_e > cur_e:
+                cur_e = w_e
+            cur_set.extend(w_events)
+        else:
+            clusters.append((cur_s, cur_e, cur_set))
+            cur_s, cur_e = w_s, w_e
+            cur_set = list(w_events)
+
+    clusters.append((cur_s, cur_e, cur_set))
+
+    incidents: List[Dict[str, Any]] = []
+    for s, e, cevents in clusters:
+        # Dedup by event_id
+        seen = set()
+        dedup: List[Event] = []
+        for x in sorted(cevents, key=lambda z: z.event_time or utc_now()):
+            if x.event_id and x.event_id in seen:
+                continue
+            if x.event_id:
+                seen.add(x.event_id)
+            dedup.append(x)
+
+        if not dedup:
+            continue
+
+        first_seen = dedup[0].event_time or s
+        last_seen = dedup[-1].event_time or e
+
+        count = len(dedup)
+        sev = severity_scale(count, sev_medium, sev_high)
+
+        # Mark "new" if last_seen after last watermark
+        is_new = bool(last_seen_dt and last_seen_dt < last_seen) if last_seen_dt else True
+
+        evidence = {
+            "window_minutes": window_minutes,
+            "auto_threshold": threshold,
+            "by_actor": top_n(count_by([x.actor for x in dedup])),
+            "by_region": top_n(count_by([x.aws_region for x in dedup])),
+            "by_eventName": top_n(count_by([x.event_name for x in dedup])),
+        }
+
+        incidents.append(make_incident(
+            inc_type=inc_type,
+            severity=sev,
+            title=f"{title_prefix}: {count} events",
+            first_seen=first_seen,
+            last_seen=last_seen,
+            count=count,
+            evidence=evidence,
+            samples=compact_samples(dedup),
+            recommendation=recommendation,
+            is_new=is_new,
+            now=now,
+        ))
+
+    return incidents
+
+
+def detect_new_region_usage(
+    events: List[Event],
+    *,
+    now: datetime,
+    last_seen_dt: Optional[datetime],
+    debug: bool,
+) -> List[Dict[str, Any]]:
+    """
+    New region usage:
+    - Baseline = regions seen in first 7 days of lookback
+    - Alert on regions that appear later that were not in baseline
+    """
+    ev = [e for e in events if e.event_time]
+    if not ev:
+        return []
+
+    start = ev[0].event_time  # type: ignore[assignment]
+    end = ev[-1].event_time   # type: ignore[assignment]
+    assert start and end
+
+    baseline_end = start + timedelta(days=7)
+    baseline_regions = sorted({e.aws_region for e in ev if e.event_time and e.event_time <= baseline_end})
+
+    later = [e for e in ev if e.event_time and e.event_time > baseline_end]
+    new_regions = sorted({e.aws_region for e in later if e.aws_region not in baseline_regions})
+
+    if debug:
+        print(f"[DEBUG] new_region: baseline_days=7 baseline_regions={baseline_regions} new_regions={new_regions}")
+
+    if not new_regions:
+        return []
+
+    hits = [e for e in later if e.aws_region in new_regions]
+    hits.sort(key=lambda x: x.event_time or utc_now())
+    first_seen = hits[0].event_time or start
+    last_seen = hits[-1].event_time or end
+
+    is_new = bool(last_seen_dt and last_seen_dt < last_seen) if last_seen_dt else True
+
+    sev = "high" if len(new_regions) >= 3 else "medium"
+
+    return [make_incident(
+        inc_type="new_region_activity",
+        severity=sev,
+        title=f"New region(s) used: {', '.join(new_regions)}",
+        first_seen=first_seen,
+        last_seen=last_seen,
+        count=len(hits),
+        evidence={
+            "baseline_regions": baseline_regions,
+            "new_regions": new_regions,
+            "by_actor": top_n(count_by([e.actor for e in hits])),
+            "by_eventName": top_n(count_by([e.event_name for e in hits])),
+        },
+        samples=compact_samples(hits),
+        recommendation="If those regions aren’t expected, investigate credential use and consider region guardrails (SCP/IAM conditions).",
+        is_new=is_new,
+        now=now,
+    )]
+
+
+def detect_api_burst_actor(
+    events: List[Event],
+    *,
+    now: datetime,
+    last_seen_dt: Optional[datetime],
+    window_minutes: int,
+    debug: bool,
+) -> List[Dict[str, Any]]:
+    """
+    API burst by actor (success OR fail):
+    - Compute sliding windows over the last 30 days
+    - Auto threshold based on distribution of window call counts
+    """
+    ev = [e for e in events if e.event_time]
+    if not ev:
+        return []
+
+    # Bin all events into minute buckets
+    start = ev[0].event_time  # type: ignore[assignment]
+    end = ev[-1].event_time   # type: ignore[assignment]
+    assert start and end
+
+    # Build per-minute lists
+    minute_bins = build_minute_bins(ev, start, end)
+    minutes = sorted(minute_bins.keys())
+    if not minutes:
+        return []
+
+    window = timedelta(minutes=window_minutes)
+
+    # For each minute anchor, compute max actor count within window
+    # And collect those maxima to build a baseline
+    maxima: List[int] = []
+    max_detail: List[Tuple[datetime, datetime, str, int, List[Event]]] = []
+
+    for anchor in minutes:
+        w_start = anchor
+        w_end = anchor + window
+
+        bucket_events: List[Event] = []
+        for m in minutes:
+            if m < w_start:
+                continue
+            if m > w_end:
+                break
+            bucket_events.extend(minute_bins.get(m, []))
+
+        if not bucket_events:
+            continue
+
+        # Count calls by actor in this window
+        counts = count_by([e.actor for e in bucket_events])
+        top_actor, top_count = next(iter(counts.items()))
+        maxima.append(top_count)
+        max_detail.append((w_start, w_end, top_actor, top_count, bucket_events))
+
+    threshold = compute_baseline_threshold(maxima, hard_min=300, multiplier=3.0)
+
+    if debug:
+        print(f"[DEBUG] api_burst: windows={len(maxima)} auto_threshold={threshold} (hard_min=300)")
+
+    # Flag windows where top actor exceeds threshold
+    flagged = [(s, e, actor, cnt, evs) for (s, e, actor, cnt, evs) in max_detail if cnt >= threshold]
+    if not flagged:
+        return []
+
+    # Merge flagged windows into clusters by time, but keep actor-specific evidence
+    flagged.sort(key=lambda x: x[0])
+    clusters: List[Tuple[datetime, datetime, List[Tuple[str, int]], List[Event]]] = []
+
+    cur_s, cur_e, cur_actor, cur_cnt, cur_evs = flagged[0]
+    cur_actor_peaks: List[Tuple[str, int]] = [(cur_actor, cur_cnt)]
+    cur_events = list(cur_evs)
+
+    for s, e, actor, cnt, evs in flagged[1:]:
+        if s <= cur_e:
+            if e > cur_e:
+                cur_e = e
+            cur_actor_peaks.append((actor, cnt))
+            cur_events.extend(evs)
+        else:
+            clusters.append((cur_s, cur_e, cur_actor_peaks, cur_events))
+            cur_s, cur_e = s, e
+            cur_actor_peaks = [(actor, cnt)]
+            cur_events = list(evs)
+
+    clusters.append((cur_s, cur_e, cur_actor_peaks, cur_events))
+
+    incidents: List[Dict[str, Any]] = []
+    for s, e, peaks, cevs in clusters:
+        # Use last event time as "last_seen"
+        cevs = [x for x in cevs if x.event_time]
+        cevs.sort(key=lambda x: x.event_time or utc_now())
+        if not cevs:
+            continue
+
+        first_seen = cevs[0].event_time or s
+        last_seen = cevs[-1].event_time or e
+
+        is_new = bool(last_seen_dt and last_seen_dt < last_seen) if last_seen_dt else True
+
+        # Choose highest peak in cluster
+        peaks_sorted = sorted(peaks, key=lambda t: t[1], reverse=True)
+        peak_actor, peak_count = peaks_sorted[0]
+
+        sev = severity_scale(peak_count, medium=600, high=1200)
+
+        incidents.append(make_incident(
+            inc_type="api_burst",
+            severity=sev,
+            title=f"API burst: '{peak_actor}' peaked at {peak_count} calls/{window_minutes}m",
+            first_seen=first_seen,
+            last_seen=last_seen,
+            count=len(cevs),
+            evidence={
+                "window_minutes": window_minutes,
+                "auto_threshold": threshold,
+                "peak_actor": peak_actor,
+                "peak_count": peak_count,
+                "top_actors_in_cluster": peaks_sorted[:5],
+                "by_eventName": top_n(count_by([x.event_name for x in cevs])),
+                "by_region": top_n(count_by([x.aws_region for x in cevs])),
+            },
+            samples=compact_samples([x for x in cevs if x.actor == peak_actor] or cevs),
+            recommendation="Confirm whether this actor is expected automation. If not, investigate scripted abuse or compromised creds; add guardrails/throttling.",
+            is_new=is_new,
+            now=now,
+        ))
+
+    return incidents
+
+
+def detect_sensitive_iam_spike(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+    return detect_spike_family(
+        events,
+        now=now,
+        last_seen_dt=last_seen_dt,
+        window_minutes=DETECT_WINDOW_MINUTES,
+        inc_type="suspicious_iam_activity",
+        title_prefix="Sensitive IAM activity spike",
+        match_fn=lambda e: (e.event_name or "").lower() in SENSITIVE_IAM,
+        hard_min_threshold=3,   # because even 3 IAM actions in 10m can be meaningful in small envs
+        sev_medium=8,
+        sev_high=20,
+        recommendation="Review IAM changes. If unexpected, check surrounding CloudTrail events and lock down privilege-escalation paths.",
+        debug=debug,
+    )
+
+
+def detect_access_denied_spikes(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+    return detect_spike_family(
+        events,
+        now=now,
+        last_seen_dt=last_seen_dt,
+        window_minutes=DETECT_WINDOW_MINUTES,
+        inc_type="access_denied_spike",
+        title_prefix="AccessDenied/Unauthorized spike",
+        match_fn=is_denied,
+        hard_min_threshold=5,
+        sev_medium=10,
+        sev_high=25,
+        recommendation="Verify the failing principal is expected. If not, investigate credential misuse or broken automation; tighten IAM and add alerts.",
+        debug=debug,
+    )
+
+
+def detect_invalid_ami_attempts(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+    return detect_spike_family(
+        events,
+        now=now,
+        last_seen_dt=last_seen_dt,
+        window_minutes=DETECT_WINDOW_MINUTES,
+        inc_type="invalid_ami_spike",
+        title_prefix="EC2 invalid AMI attempts",
+        match_fn=is_invalid_ami,
+        hard_min_threshold=1,   # even 1 is notable in a small lab
+        sev_medium=5,
+        sev_high=15,
+        recommendation="Could be broken automation or probing. Verify who attempted RunInstances and whether it was intended.",
+        debug=debug,
+    )
+
+
+def detect_signin_failures(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+    return detect_spike_family(
+        events,
+        now=now,
+        last_seen_dt=last_seen_dt,
+        window_minutes=DETECT_WINDOW_MINUTES,
+        inc_type="signin_failure_spike",
+        title_prefix="Sign-in/auth failures spike",
+        match_fn=is_signin_failure,
+        hard_min_threshold=3,
+        sev_medium=6,
+        sev_high=15,
+        recommendation="Investigate sign-in failure sources and actors. If unexpected, reset credentials and verify MFA/Identity Center settings.",
+        debug=debug,
+    )
 
 
 # -------------------------
 # Main
 # -------------------------
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="AnomAI Detection (easy mode). One command, auto thresholds.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--region", required=True, help="AWS region for DynamoDB access (e.g. us-east-2)")
-    parser.add_argument("--table", default="anomai_events", help="DynamoDB table name")
-    parser.add_argument("--lookback-days", type=int, default=30, help="How far back to look using day_bucket")
-    parser.add_argument("--max-events", type=int, default=5000, help="Keep at most N most recent events")
-    parser.add_argument("--detect-window-minutes", type=int, default=10, help="Detection window length (anchored to newest event)")
-    parser.add_argument("--out", default="out/incidents.json", help="Output JSON path")
-    parser.add_argument("--debug", action="store_true", help="Print debug info")
+def main() -> int:
+    debug = has_flag("--debug")
 
-    args = parser.parse_args()
-    ensure_parent_dir(args.out)
+    region = resolve_region(get_arg_value("--region"))
+    table_name = (get_arg_value("--table") or DEFAULT_TABLE).strip()
 
-    raw_items = ddb_scan_day_bucket(
-        region=args.region,
-        table_name=args.table,
-        lookback_days=args.lookback_days,
-        max_events=args.max_events,
-        debug=args.debug,
-    )
+    lookback_days_s = get_arg_value("--lookback-days")
+    lookback_days = int(lookback_days_s) if (lookback_days_s and lookback_days_s.isdigit()) else LOOKBACK_DAYS
 
-    events = normalize_raw_items(raw_items)
+    max_items_s = get_arg_value("--max-items")
+    if max_items_s and max_items_s.strip().isdigit():
+        v = int(max_items_s)
+        max_items: Optional[int] = None if v <= 0 else v
+    else:
+        max_items = None  # default: no cap (scan all lookback items)
 
-    # If table is empty or timestamps missing
-    if not events or not events[0].event_time:
-        output = {
-            "generated_at": utc_now().isoformat().replace("+00:00", "Z"),
-            "source": "dynamodb_day_bucket_scan",
-            "region": args.region,
-            "table": args.table,
-            "lookback_days": args.lookback_days,
-            "max_events": args.max_events,
-            "detect_window_minutes": args.detect_window_minutes,
-            "events_kept": len(events),
+    if not region:
+        print("[ERROR] No AWS region found. Fix with one of:")
+        print("  ./scripts/detection/run_detection.py --region us-east-2")
+        print("  export AWS_REGION=us-east-2")
+        return 2
+
+    ensure_parent_dir(OUT_PATH)
+    ensure_parent_dir(STATE_PATH)
+
+    last_seen = read_state_watermark(STATE_PATH)
+    last_seen_dt = parse_iso8601(last_seen) if last_seen else None
+
+    if debug:
+        print(f"[DEBUG] config region={region} table={table_name} lookback_days={lookback_days} max_items={'unlimited' if max_items is None else max_items}")
+        print(f"[DEBUG] watermark last_seen_event_time={last_seen or 'none'}")
+
+    # 1) Load
+    raw_items = scan_last_days(table_name, region, lookback_days, max_items, debug)
+    events = normalize_items(raw_items)
+
+    now = utc_now()
+
+    if not events:
+        out = {
+            "generated_at": iso_z(now),
+            "region": region,
+            "table": table_name,
+            "lookback_days": lookback_days,
+            "events_scanned": 0,
             "incident_count": 0,
             "incidents": [],
-            "note": "No events with valid eventTime found.",
         }
-        with open(args.out, "w", encoding="utf-8") as f:
-            json.dump(output, f, indent=2)
-        print(f"[OK] Kept {len(events)} events → Detected 0 incidents → Wrote {args.out}")
-        return
+        with open(OUT_PATH, "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=2)
+        print("[OK] No events found → wrote out/incidents.json")
+        return 0
 
-    newest_event_time = events[0].event_time
-    window_end = newest_event_time
-    window_start = newest_event_time - timedelta(minutes=args.detect_window_minutes)
-
-    recent = [e for e in events if is_in_window(e.event_time, window_start, window_end)]
-    thresholds = auto_thresholds(len(recent))
-
-    if args.debug:
-        newest_str = events[0].event_time_str
-        oldest_str = events[-1].event_time_str if events[-1].event_time_str else ""
-        print(f"[DEBUG] newest_kept={len(events)} time_range(newest..oldest)={newest_str} .. {oldest_str}")
-        print(f"[DEBUG] kept_events={len(events)} time_range newest={events[0].event_time} oldest={events[-1].event_time}")
-        print(f"[DEBUG] detect_window_start={window_start.isoformat()}")
-        print(f"[DEBUG] detect_window_end={window_end.isoformat()}")
-        print(f"[DEBUG] events_in_detect_window={len(recent)}")
-        denied_like = sum(1 for e in events if e.error_code and ("accessdenied" in e.error_code.lower() or "unauthorized" in e.error_code.lower()))
-        print(f"[DEBUG] denied_like_total={denied_like}")
-        print(f"[DEBUG] top_regions={list(top_n_counts([e.aws_region for e in events], n=6).items())}")
-        print(f"[DEBUG] auto_thresholds={thresholds}")
-
+    # 2) Run detectors (full 30-day view; SOC-style spike clustering)
     incidents: List[Dict[str, Any]] = []
+    incidents.extend(detect_access_denied_spikes(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
+    incidents.extend(detect_sensitive_iam_spike(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
+    incidents.extend(detect_invalid_ami_attempts(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
+    incidents.extend(detect_signin_failures(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
+    incidents.extend(detect_new_region_usage(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
+    incidents.extend(detect_api_burst_actor(events, now=now, last_seen_dt=last_seen_dt, window_minutes=DETECT_WINDOW_MINUTES, debug=debug))
 
-    inc = detect_access_denied_spike(events, window_start, window_end, thresholds["denied_threshold"])
-    if inc:
-        incidents.append(inc)
+    # Sort incidents newest-first
+    incidents.sort(key=lambda x: x.get("last_seen", ""), reverse=True)
 
-    inc = detect_invalid_ami(events, window_start, window_end, thresholds["invalid_ami_threshold"])
-    if inc:
-        incidents.append(inc)
+    # 3) Compute newest event time for watermark (so next run flags "new" properly)
+    newest_event_time = None
+    for e in reversed(events):
+        if e.event_time:
+            newest_event_time = e.event_time
+            break
+    if newest_event_time:
+        write_state_watermark(STATE_PATH, iso_z(newest_event_time))
 
-    inc = detect_sensitive_iam_ops(events, window_start, window_end, thresholds["iam_threshold"])
-    if inc:
-        incidents.append(inc)
+    # 4) Build output (timeline summary)
+    time_range_oldest = events[0].event_time
+    time_range_newest = events[-1].event_time
 
-    inc = detect_api_burst_by_actor(events, window_start, window_end, thresholds["burst_threshold"])
-    if inc:
-        incidents.append(inc)
+    # How many incidents are "new" since last run
+    new_count = sum(1 for inc in incidents if inc.get("is_new"))
 
     output = {
-        "generated_at": utc_now().isoformat().replace("+00:00", "Z"),
-        "source": "dynamodb_day_bucket_scan",
-        "region": args.region,
-        "table": args.table,
-        "lookback_days": args.lookback_days,
-        "max_events": args.max_events,
-        "detect_window_minutes": args.detect_window_minutes,
-        "detect_window": {
-            "start": window_start.isoformat().replace("+00:00", "Z"),
-            "end": window_end.isoformat().replace("+00:00", "Z"),
-            "anchored_to": "newest_event_in_dynamodb",
+        "generated_at": iso_z(now),
+        "region": region,
+        "table": table_name,
+        "lookback_days": lookback_days,
+        "window_minutes": DETECT_WINDOW_MINUTES,
+        "events_scanned": len(events),
+        "time_range": {
+            "oldest": iso_z(time_range_oldest) if time_range_oldest else None,
+            "newest": iso_z(time_range_newest) if time_range_newest else None,
         },
-        "events_kept": len(events),
-        "events_in_detect_window": len(recent),
-        "thresholds_auto": thresholds,
         "incident_count": len(incidents),
+        "new_incident_count": new_count,
         "incidents": incidents,
     }
 
-    with open(args.out, "w", encoding="utf-8") as f:
+    with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
-    newest_str = events[0].event_time_str
-    oldest_str = events[-1].event_time_str
-    print_soc_summary(
-        events_kept=len(events),
-        newest=newest_str,
-        oldest=oldest_str,
-        window_start=window_start,
-        window_end=window_end,
-        incidents=incidents,
-    )
+    # 5) Print a clean console summary (so you don't have to open JSON)
+    print("\n=== AnomAI Detection Summary ===")
+    print(f"events_scanned: {len(events)}")
+    if time_range_oldest and time_range_newest:
+        print(f"time_range: {iso_z(time_range_oldest)} .. {iso_z(time_range_newest)}")
+    print(f"incidents: {len(incidents)} (new: {new_count})")
 
-    print(f"[OK] Kept {len(events)} events → Detected {len(incidents)} incidents → Wrote {args.out}")
+    if incidents:
+        print("\nTop incidents (newest first):")
+        for inc in incidents[:8]:
+            flag = "🆕" if inc.get("is_new") else " "
+            print(f"{flag} [{inc.get('severity','?').upper():6}] {inc.get('age','?'):>10}  {inc.get('title','')}")
+    else:
+        print("\nNo incidents detected in lookback window.")
+
+    print(f"\n[OK] Wrote {OUT_PATH} and updated {STATE_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
