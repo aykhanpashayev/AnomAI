@@ -25,3 +25,8 @@ Test actor role and activity generator script created. It's perfectly running an
 
 API reseach fully completed.
 ```
+
+## Fourth and Fifth week of project 2/2/2026 - 2/16/2026
+```
+Detection script completed, another script added to convert the output json of incidents for better format for better UI. Created API using flask so UI can directly pull incidents from this UI.
+```
