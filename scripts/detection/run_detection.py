@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -142,27 +143,47 @@ def has_flag(flag: str) -> bool:
 
 
 # -------------------------
-# State (watermark)
+# State (watermark + seen incidents)
 # -------------------------
 
-def read_state_watermark(path: str) -> Optional[str]:
+def read_state(path: str) -> Dict[str, Any]:
+    """Read detection state safely.
+
+    Backwards-compatible:
+      - older state files may only contain last_seen_event_time
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
-        w = obj.get("last_seen_event_time")
-        return str(w) if w else None
+        if isinstance(obj, dict):
+            return obj
+        return {}
     except Exception:
-        return None
+        return {}
 
 
-def write_state_watermark(path: str, last_seen_event_time: str) -> None:
+def write_state(path: str, *, last_seen_event_time: str, seen_incident_ids: List[str]) -> None:
     ensure_parent_dir(path)
     obj = {
         "last_seen_event_time": last_seen_event_time,
+        "seen_incident_ids": sorted(set(seen_incident_ids)),
         "updated_at": iso_z(utc_now()),
+        "schema_version": 2,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2)
+
+
+def get_state_watermark(state: Dict[str, Any]) -> Optional[str]:
+    w = state.get("last_seen_event_time")
+    return str(w) if w else None
+
+
+def get_state_seen_ids(state: Dict[str, Any]) -> List[str]:
+    v = state.get("seen_incident_ids")
+    if isinstance(v, list):
+        return [str(x) for x in v if isinstance(x, (str, int, float))]
+    return []
 
 
 # -------------------------
@@ -378,6 +399,34 @@ def compact_samples(events: List[Event], max_samples: int = 6) -> List[Dict[str,
     return out
 
 
+def stable_hash16(s: str) -> str:
+    """Deterministic short hash for IDs."""
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+
+
+def incident_primary_key(inc_type: str, evidence: Dict[str, Any]) -> str:
+    """Pick a stable discriminator so incident_id is deterministic.
+
+    Prefer the top actor if present.
+    """
+    if isinstance(evidence, dict):
+        by_actor = evidence.get("by_actor")
+        if isinstance(by_actor, dict) and by_actor:
+            top_actor = next(iter(by_actor.keys()))
+            if top_actor:
+                return f"actor:{top_actor}"
+
+        peak_actor = evidence.get("peak_actor")
+        if isinstance(peak_actor, str) and peak_actor:
+            return f"actor:{peak_actor}"
+
+        new_regions = evidence.get("new_regions")
+        if isinstance(new_regions, list) and new_regions:
+            return "regions:" + ",".join(sorted([str(r) for r in new_regions]))
+
+    return "unknown"
+
+
 def make_incident(
     *,
     inc_type: str,
@@ -390,16 +439,27 @@ def make_incident(
     samples: List[Dict[str, Any]],
     recommendation: str,
     is_new: bool,
+    region: str,
     now: datetime,
 ) -> Dict[str, Any]:
+    first_seen_z = iso_z(first_seen)
+    last_seen_z = iso_z(last_seen)
+
+    # Deterministic ID (v1): stable across reruns for the same logical incident
+    primary = incident_primary_key(inc_type, evidence)
+    incident_id = stable_hash16(f"v1|{inc_type}|{first_seen_z}|{last_seen_z}|{primary}|{region}")
+
     return {
+        "incident_id": incident_id,
         "type": inc_type,
         "severity": severity,
         "title": title,
-        "first_seen": iso_z(first_seen),
-        "last_seen": iso_z(last_seen),
+        "first_seen": first_seen_z,
+        "last_seen": last_seen_z,
         "age": human_age(now, last_seen),
         "count": count,
+        "evidence_count": count,
+        "sample_count": len(samples),
         "is_new": is_new,
         "evidence": evidence,
         "samples": samples,
@@ -464,6 +524,7 @@ def detect_spike_family(
     *,
     now: datetime,
     last_seen_dt: Optional[datetime],
+    region: str,
     window_minutes: int,
     inc_type: str,
     title_prefix: str,
@@ -592,6 +653,7 @@ def detect_spike_family(
             samples=compact_samples(dedup),
             recommendation=recommendation,
             is_new=is_new,
+            region=region,
             now=now,
         ))
 
@@ -603,6 +665,7 @@ def detect_new_region_usage(
     *,
     now: datetime,
     last_seen_dt: Optional[datetime],
+    region: str,
     debug: bool,
 ) -> List[Dict[str, Any]]:
     """
@@ -655,6 +718,7 @@ def detect_new_region_usage(
         samples=compact_samples(hits),
         recommendation="If those regions aren’t expected, investigate credential use and consider region guardrails (SCP/IAM conditions).",
         is_new=is_new,
+        region=region,
         now=now,
     )]
 
@@ -664,6 +728,7 @@ def detect_api_burst_actor(
     *,
     now: datetime,
     last_seen_dt: Optional[datetime],
+    region: str,
     window_minutes: int,
     debug: bool,
 ) -> List[Dict[str, Any]]:
@@ -785,17 +850,19 @@ def detect_api_burst_actor(
             samples=compact_samples([x for x in cevs if x.actor == peak_actor] or cevs),
             recommendation="Confirm whether this actor is expected automation. If not, investigate scripted abuse or compromised creds; add guardrails/throttling.",
             is_new=is_new,
+            region=region,
             now=now,
         ))
 
     return incidents
 
 
-def detect_sensitive_iam_spike(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+def detect_sensitive_iam_spike(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], region: str, debug: bool) -> List[Dict[str, Any]]:
     return detect_spike_family(
         events,
         now=now,
         last_seen_dt=last_seen_dt,
+        region=region,
         window_minutes=DETECT_WINDOW_MINUTES,
         inc_type="suspicious_iam_activity",
         title_prefix="Sensitive IAM activity spike",
@@ -808,11 +875,12 @@ def detect_sensitive_iam_spike(events: List[Event], *, now: datetime, last_seen_
     )
 
 
-def detect_access_denied_spikes(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+def detect_access_denied_spikes(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], region: str, debug: bool) -> List[Dict[str, Any]]:
     return detect_spike_family(
         events,
         now=now,
         last_seen_dt=last_seen_dt,
+        region=region,
         window_minutes=DETECT_WINDOW_MINUTES,
         inc_type="access_denied_spike",
         title_prefix="AccessDenied/Unauthorized spike",
@@ -825,11 +893,12 @@ def detect_access_denied_spikes(events: List[Event], *, now: datetime, last_seen
     )
 
 
-def detect_invalid_ami_attempts(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+def detect_invalid_ami_attempts(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], region: str, debug: bool) -> List[Dict[str, Any]]:
     return detect_spike_family(
         events,
         now=now,
         last_seen_dt=last_seen_dt,
+        region=region,
         window_minutes=DETECT_WINDOW_MINUTES,
         inc_type="invalid_ami_spike",
         title_prefix="EC2 invalid AMI attempts",
@@ -842,11 +911,12 @@ def detect_invalid_ami_attempts(events: List[Event], *, now: datetime, last_seen
     )
 
 
-def detect_signin_failures(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], debug: bool) -> List[Dict[str, Any]]:
+def detect_signin_failures(events: List[Event], *, now: datetime, last_seen_dt: Optional[datetime], region: str, debug: bool) -> List[Dict[str, Any]]:
     return detect_spike_family(
         events,
         now=now,
         last_seen_dt=last_seen_dt,
+        region=region,
         window_minutes=DETECT_WINDOW_MINUTES,
         inc_type="signin_failure_spike",
         title_prefix="Sign-in/auth failures spike",
@@ -888,8 +958,10 @@ def main() -> int:
     ensure_parent_dir(OUT_PATH)
     ensure_parent_dir(STATE_PATH)
 
-    last_seen = read_state_watermark(STATE_PATH)
+    state = read_state(STATE_PATH)
+    last_seen = get_state_watermark(state)
     last_seen_dt = parse_iso8601(last_seen) if last_seen else None
+    seen_incident_ids = set(get_state_seen_ids(state))
 
     if debug:
         print(f"[DEBUG] config region={region} table={table_name} lookback_days={lookback_days} max_items={'unlimited' if max_items is None else max_items}")
@@ -918,12 +990,34 @@ def main() -> int:
 
     # 2) Run detectors (full 30-day view; SOC-style spike clustering)
     incidents: List[Dict[str, Any]] = []
-    incidents.extend(detect_access_denied_spikes(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
-    incidents.extend(detect_sensitive_iam_spike(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
-    incidents.extend(detect_invalid_ami_attempts(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
-    incidents.extend(detect_signin_failures(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
-    incidents.extend(detect_new_region_usage(events, now=now, last_seen_dt=last_seen_dt, debug=debug))
-    incidents.extend(detect_api_burst_actor(events, now=now, last_seen_dt=last_seen_dt, window_minutes=DETECT_WINDOW_MINUTES, debug=debug))
+    incidents.extend(detect_access_denied_spikes(events, now=now, last_seen_dt=last_seen_dt, region=region, debug=debug))
+    incidents.extend(detect_sensitive_iam_spike(events, now=now, last_seen_dt=last_seen_dt, region=region, debug=debug))
+    incidents.extend(detect_invalid_ami_attempts(events, now=now, last_seen_dt=last_seen_dt, region=region, debug=debug))
+    incidents.extend(detect_signin_failures(events, now=now, last_seen_dt=last_seen_dt, region=region, debug=debug))
+    incidents.extend(detect_new_region_usage(events, now=now, last_seen_dt=last_seen_dt, region=region, debug=debug))
+    incidents.extend(detect_api_burst_actor(events, now=now, last_seen_dt=last_seen_dt, region=region, window_minutes=DETECT_WINDOW_MINUTES, debug=debug))
+
+    # 2.5) Deduplicate incidents by deterministic incident_id
+    dedup_map: Dict[str, Dict[str, Any]] = {}
+    for inc in incidents:
+        iid = str(inc.get("incident_id") or "")
+        if not iid:
+            continue
+        prev = dedup_map.get(iid)
+        if not prev:
+            dedup_map[iid] = inc
+            continue
+        # keep the one with the newest last_seen (string sort works for ISO Z)
+        if str(inc.get("last_seen") or "") > str(prev.get("last_seen") or ""):
+            dedup_map[iid] = inc
+
+    incidents = list(dedup_map.values())
+
+    # Override is_new using persisted seen IDs (stable across reruns)
+    for inc in incidents:
+        iid = str(inc.get("incident_id") or "")
+        if iid and iid in seen_incident_ids:
+            inc["is_new"] = False
 
     # Sort incidents newest-first
     incidents.sort(key=lambda x: x.get("last_seen", ""), reverse=True)
@@ -934,8 +1028,16 @@ def main() -> int:
         if e.event_time:
             newest_event_time = e.event_time
             break
+    # Persist state:
+    # - keep event watermark for troubleshooting
+    # - keep seen incident IDs so reruns only show truly new incidents
     if newest_event_time:
-        write_state_watermark(STATE_PATH, iso_z(newest_event_time))
+        for inc in incidents:
+            iid = str(inc.get("incident_id") or "")
+            if iid:
+                seen_incident_ids.add(iid)
+
+        write_state(STATE_PATH, last_seen_event_time=iso_z(newest_event_time), seen_incident_ids=sorted(seen_incident_ids))
 
     # 4) Build output (timeline summary)
     time_range_oldest = events[0].event_time
