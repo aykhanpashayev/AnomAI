@@ -1,0 +1,141 @@
+import streamlit as st
+
+# Step 1: Page Configuration
+# Set the page to wide mode to match the AnomAI UI Design Plan[cite: 7, 22].
+st.set_page_config(
+    page_title="AnomAI Security Dashboard",
+    layout="wide"
+)
+
+# Step 2: Clean CSS for the UI Layout
+# This CSS ensures the background is white and the custom Filter box is grey[cite: 23].
+st.markdown("""
+    <style>
+    /* 1. Ensure the main background remains white */
+    .stApp {
+        background-color: white;
+    }
+    
+    /* 2. Target the segmented control to fill space and align vertically */
+    div[data-testid="stSegmentedControl"] {
+        width: 100% !important; 
+        /* Reduced margin to align with H1 padding/margin */
+        margin-top: 0px !important; 
+    }
+    
+    div[data-testid="stSegmentedControl"] button {
+        /* Height and centering */
+        min-height: 100px !important; 
+        display: flex !important;
+        align-items: center !important; 
+        justify-content: center !important;    
+    
+        /* Text appearance - Added back for visibility */
+        font-size: 24px !important;
+        font-weight: bold !important;
+    
+        /* Shape and spacing - FIXED: Now properly inside the bracket */
+        border-radius: 4px !important;
+        margin: 0px !important;
+        flex-grow: 1 !important;
+    }
+    
+    /* 3. Vertically center the title with the buttons */
+    h1 {
+        /* Adjusted to match the button's vertical position */
+        margin-top: 0px !important; 
+        line-height: 1.2 !important; 
+        font-size: 42px !important;    
+        text-align: center;
+    }
+    
+    /* 4. Filter Box styling: Solid grey box [cite: 130] */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #f8f9fa !important; 
+        border: 1px solid #e6e9ef !important; 
+        border-radius: 8px !important;
+        padding: 15px !important;
+    }
+    
+    /* 5. Expander styling inside Filter box [cite: 132] */
+    [data-testid="stExpander"] {
+        background-color: transparent !important;
+        border: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Step 3: Top Navigation Row [cite: 25]
+# Use columns to place Dashboard/Chatbot buttons and Title on the same line[cite: 36].
+# Ratio [1.5, 4, 1.5] ensures buttons are to the far left.
+col_nav, col_title, col_spacer = st.columns([3.5, 5, 2])
+
+with col_nav:
+    st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+
+    page_selection = st.segmented_control(
+        label="Navigation",
+        options=["🔴 Dashboard", "🤖 Chatbot"],
+        default="🔴 Dashboard",
+        label_visibility="collapsed"
+    )
+
+with col_title:
+    st.markdown("<h1 style='text-align: center;'>AnomAI Security Overview</h1>", unsafe_allow_html=True)
+
+st.divider()
+
+# Step 4: Main Content Layout [cite: 24]
+# col_filter is for the grey box, col_display is for the main data.
+# The ratio [1.2, 5] keeps the Filter box narrow, not exceeding the Chatbot button width.
+col_filter, col_display = st.columns([1.2, 5])
+
+# --- LEFT SIDE: THE GREY FILTER BOX ---
+with col_filter:
+    # Use a container with a border.
+    # Our CSS above will turn this container's background grey.
+    with st.container(border=True):
+        st.markdown("### Filters")  # Section title [cite: 130]
+
+        # 1. Severity Category [cite: 133, 137]
+        with st.expander("Severity", expanded=True):
+            st.checkbox("High")
+            st.checkbox("Medium")
+            st.checkbox("Low")
+
+        st.divider()  # Optional: thin line between categories
+
+        # 2. Actor Category [cite: 138, 144]
+        with st.expander("Actor", expanded=True):
+            st.checkbox("All Actors")
+            st.checkbox("admin_user")
+            st.checkbox("jdoe")
+            st.checkbox("test_user")
+            st.checkbox("service_account")
+            st.checkbox("guest_user")
+
+        st.divider()
+
+        # 3. Incident Type Category [cite: 145, 151]
+        with st.expander("Incident Type", expanded=True):
+            st.checkbox("Access Denied")
+            st.checkbox("API Burst")
+            st.checkbox("New Region")
+            st.checkbox("IAM Change")
+
+        st.write("")  # Add some spacing
+
+        # 4. Reset Button - Placed at the very bottom inside the grey box [cite: 152]
+        st.button("Reset Filters", use_container_width=True)
+
+# --- RIGHT SIDE: CONTENT DISPLAY [cite: 12] ---
+with col_display:
+    # We use 'in' to check the selection because the string contains icons.
+    if page_selection and "Dashboard" in page_selection:
+        st.subheader("Dashboard View")
+        # Ready for Step 5: Metric Cards [cite: 42, 44]
+        st.info("The next step is to add the 4 Summary Metric cards here.")
+
+    elif page_selection and "Chatbot" in page_selection:
+        st.subheader("Chatbot View")
+        st.write("AI assistant is ready for your questions[cite: 155].")
