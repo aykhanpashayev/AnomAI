@@ -1,4 +1,85 @@
 import streamlit as st
+import plotly.express as px
+import pandas as pd
+
+# Sample incident detail data
+incident_details = [
+    {
+        "Dropdown Label": "Access Denied Spike",
+        "Incident Name": "AccessDeniedSpike",
+        "Severity": "High",
+        "Actor": "admin_user",
+        "Risk Score": 85,
+        "Summary": 'Multiple "AccessDenied" errors were detected in a short time window.',
+        "Advanced Details": [
+            "15 events in 10 min",
+            "Top Events: AccessDenied, ConsoleLogin"
+        ]
+    },
+    {
+        "Dropdown Label": "API Burst",
+        "Incident Name": "ApiBurst",
+        "Severity": "Medium",
+        "Actor": "jdoe",
+        "Risk Score": 60,
+        "Summary": "Unusual burst of API calls detected.",
+        "Advanced Details": [
+            "200 calls within 5 minutes",
+            "Service: S3"
+        ]
+    },
+    {
+        "Dropdown Label": "New Region Login",
+        "Incident Name": "NewRegionLogin",
+        "Severity": "High",
+        "Actor": "test_user",
+        "Risk Score": 90,
+        "Summary": "Login detected from a new geographic region.",
+        "Advanced Details": [
+            "Region: ap-south-1",
+            "Previous region: us-east-1"
+        ]
+    }
+]
+
+# Sample incident table data
+incident_table_data = pd.DataFrame([
+    {
+        "Severity": "High",
+        "Incident Type": "Access Denied",
+        "Actor": "admin_user",
+        "Risk Score": 92,
+        "Time": "08:15"
+    },
+    {
+        "Severity": "Medium",
+        "Incident Type": "API Burst",
+        "Actor": "jdoe",
+        "Risk Score": 67,
+        "Time": "09:20"
+    },
+    {
+        "Severity": "High",
+        "Incident Type": "New Region",
+        "Actor": "test_user",
+        "Risk Score": 88,
+        "Time": "10:05"
+    },
+    {
+        "Severity": "Low",
+        "Incident Type": "IAM Change",
+        "Actor": "service_account",
+        "Risk Score": 34,
+        "Time": "11:10"
+    },
+    {
+        "Severity": "High",
+        "Incident Type": "Access Denied",
+        "Actor": "guest_user",
+        "Risk Score": 79,
+        "Time": "12:30"
+    }
+])
 
 # Step 1: Page Configuration
 # Set the page to wide mode to match the AnomAI UI Design Plan[cite: 7, 22].
@@ -123,7 +204,6 @@ with col_filter:
             st.checkbox("New Region")
             st.checkbox("IAM Change")
 
-        st.write("")  # Add some spacing
 
         # 4. Reset Button - Placed at the very bottom inside the grey box [cite: 152]
         st.button("Reset Filters", use_container_width=True)
@@ -212,19 +292,82 @@ with col_display:
     with chart_col1:
         with st.container(border=True):
             st.markdown("### Incident Severity")
-            st.info("Pie chart will appear here.")
+            # Sample severity data
+            severity_data = pd.DataFrame({
+                "Severity": ["High", "Medium", "Low"],
+                "Count": [12, 8, 36]
+            })
+
+            fig = px.pie(
+                severity_data,
+                names="Severity",
+                values="Count",
+                color="Severity",
+                color_discrete_map={
+                    "High": "#e74c3c",
+                    "Medium": "#f1c40f",
+                    "Low": "#95a5a6"
+                }
+            )
+
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=250
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
 
     # Chart 2: Incident Types
     with chart_col2:
         with st.container(border=True):
             st.markdown("### Incident Types")
-            st.info("Bar chart will appear here.")
+            # Sample incident type data
+            incident_type_data = pd.DataFrame({
+                "Incident Type": ["Access Denied", "API Burst", "New Region", "IAM Change"],
+                "Count": [14, 9, 6, 4]
+            })
+
+            fig_bar = px.bar(
+                incident_type_data,
+                x="Incident Type",
+                y="Count",
+                color="Incident Type"
+            )
+
+            fig_bar.update_layout(
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=250,
+                showlegend=False
+            )
+
+            st.plotly_chart(fig_bar, use_container_width=True)
 
     # Chart 3: Incidents Over Time
     with chart_col3:
         with st.container(border=True):
             st.markdown("### Incidents Over Time")
-            st.info("Line chart will appear here.")
+
+            # Sample time series data
+            incident_time_data = pd.DataFrame({
+                "Time": ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"],
+                "Count": [2, 5, 3, 7, 4, 6]
+            })
+
+            fig_line = px.line(
+                incident_time_data,
+                x="Time",
+                y="Count",
+                markers=True
+            )
+
+            fig_line.update_layout(
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=250,
+                xaxis_title=None,
+                yaxis_title=None
+            )
+
+            st.plotly_chart(fig_line, use_container_width=True)
 
     # ----------------------------------------------------
     # Bottom section
@@ -238,9 +381,94 @@ with col_display:
     with bottom_left:
         with st.container(border=True):
             st.markdown("### Recent Incidents")
-            st.info("Incident table will appear here.")
+
+            styled_table = incident_table_data.style.map(
+                lambda x: (
+                    "color:#e74c3c;font-weight:bold"
+                    if x == "High"
+                    else "color:#f39c12;font-weight:bold"
+                    if x == "Medium"
+                    else "color:#27ae60;font-weight:bold"
+                    if x == "Low"
+                    else ""
+                ),
+                subset=["Severity"]
+            )
+
+            st.dataframe(
+                styled_table,
+                use_container_width=True,
+                hide_index=True
+            )
 
     with bottom_right:
         with st.container(border=True):
             st.markdown("### Incident Details")
-            st.info("Selected incident details will appear here.")
+
+            selected_label = st.selectbox(
+                "Select Incident",
+                [i["Dropdown Label"] for i in incident_details],
+                label_visibility="collapsed"
+            )
+
+            incident_detail_data = next(
+                i for i in incident_details if i["Dropdown Label"] == selected_label
+            )
+
+            # Set severity badge color
+            if incident_detail_data["Severity"] == "High":
+                severity_color = "#e74c3c"
+            elif incident_detail_data["Severity"] == "Medium":
+                severity_color = "#f39c12"
+            else:
+                severity_color = "#27ae60"
+
+            # Incident internal name
+            st.markdown(
+                f"<p style='font-size:24px; font-weight:600; margin-bottom:6px;'>{incident_detail_data['Incident Name']}</p>",
+                unsafe_allow_html=True
+            )
+
+            # Severity row
+            st.markdown(
+                f"""
+                <p style='font-size:18px; margin-bottom:2px;'>
+                    <strong>Severity:</strong>
+                    <span style='background-color:{severity_color}; color:white; padding:2px 10px; border-radius:6px; font-weight:600;'>
+                        {incident_detail_data["Severity"]}
+                    </span>
+                </p>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # Actor row
+            st.markdown(
+                f"<p style='font-size:18px; margin-bottom:2px;'><strong>Actor:</strong> <em>{incident_detail_data['Actor']}</em></p>",
+                unsafe_allow_html=True
+            )
+
+            # Risk score row
+            st.markdown(
+                f"<p style='font-size:18px; margin-bottom:6px;'><strong>Risk Score:</strong> {incident_detail_data['Risk Score']}</p>",
+                unsafe_allow_html=True
+            )
+
+            st.divider()
+
+            # Summary section
+            st.markdown("<h3 style='margin-bottom:6px;'>Summary</h3>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='font-size:18px; line-height:1.5; margin-top:0; margin-bottom:8px;'>{incident_detail_data['Summary']}</p>",
+                unsafe_allow_html=True
+            )
+
+            st.divider()
+
+            # Advanced details section
+            st.markdown("<h3 style='margin-bottom:6px;'>Advanced Details</h3>", unsafe_allow_html=True)
+            for item in incident_detail_data["Advanced Details"]:
+                st.markdown(
+                    f"<p style='font-size:18px; margin-top:0; margin-bottom:4px;'>• {item}</p>",
+                    unsafe_allow_html=True
+                )
