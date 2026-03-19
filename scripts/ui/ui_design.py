@@ -3,6 +3,7 @@ import plotly.express as px
 import pandas as pd
 import json
 import os
+from datetime import datetime, timedelta
 
 # Load incident data from the JSON output file.
 # The function tries several possible relative paths so that the UI can still run
@@ -47,33 +48,44 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS styling for a cleaner dashboard appearance.
-# This section adjusts the background, title formatting, and the style
-# of bordered containers and expanders.
+# Custom CSS styling that improves spacing and card appearance
+# without forcing a fixed light or dark theme. This allows the app
+# to remain readable in both Streamlit light mode and dark mode.
 st.markdown("""
     <style>
-    .stApp {
-        background-color: white;
-    }
 
-    h1 {
-        margin-top: 0px !important; 
-        line-height: 1.2 !important; 
-        font-size: 42px !important;    
-        text-align: center;
-    }
-
+    /*
+    Keep bordered containers visually separated from the page background.
+    Using a semi-transparent border is safer than forcing hard-coded colors.
+    */
     [data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #f8f9fa !important; 
-        border: 1px solid #e6e9ef !important; 
+        border: 1px solid rgba(128, 128, 128, 0.25) !important;
         border-radius: 8px !important;
         padding: 15px !important;
+        box-shadow: none !important;
     }
 
+    /*
+    Remove extra background and border styling from expanders
+    so they remain clean in both themes.
+    */
     [data-testid="stExpander"] {
         background-color: transparent !important;
         border: none !important;
     }
+
+    /*
+    Reduce extra space above the main page title and keep it centered.
+    Do not hard-code the text color so Streamlit can manage contrast
+    in both light mode and dark mode.
+    */
+    h1 {
+        margin-top: 0px !important;
+        line-height: 1.2 !important;
+        font-size: 42px !important;
+        text-align: center;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -269,7 +281,31 @@ with col_filter:
 # All summary metrics are calculated from filtered_incidents so that the top
 # row always stays synchronized with the active filter state.
 total_incidents_count = len(filtered_incidents)
-new_incidents_count = len([i for i in filtered_incidents if i.get("is_new", False)])
+
+# Calculate incidents that occurred within the last 14 days.
+# We parse the "first_seen" timestamp and compare it with the current time.
+two_weeks_ago = datetime.utcnow() - timedelta(days=14)
+
+last_two_weeks_count = 0
+
+for i in filtered_incidents:
+    first_seen = i.get("first_seen")
+
+    if not first_seen:
+        continue
+
+    try:
+        # Parse ISO timestamp (e.g., "2026-03-18T20:48:00Z")
+        incident_time = datetime.strptime(first_seen[:19], "%Y-%m-%dT%H:%M:%S")
+
+        # Count if the incident occurred within the last 14 days
+        if incident_time >= two_weeks_ago:
+            last_two_weeks_count += 1
+
+    except ValueError:
+        # Skip malformed timestamps safely
+        continue
+
 high_severity_count = len([i for i in filtered_incidents if i.get("severity", "").lower() == "high"])
 
 # Calculate the top actor by summing event counts across the filtered incidents.
@@ -311,14 +347,28 @@ for idx, inc in enumerate(filtered_incidents, start=1):
     risk_score = {"High": 90, "Medium": 60, "Low": 30}.get(severity_val, 0)
 
     created_time = inc.get("first_seen", "")
-    time_str = created_time.split("T")[1][:5] if "T" in created_time else "Unknown"
+
+    # Convert timestamp to DATE only (e.g., "Feb 02 2026") for the Recent Incidents table
+    # and the incident detail dropdown label.
+    if "T" in created_time:
+        try:
+            dt = datetime.strptime(created_time[:19], "%Y-%m-%dT%H:%M:%S")
+            date_str = dt.strftime("%b %d %Y")
+            month_str = dt.strftime("%b %Y")
+        except ValueError:
+            date_str = "Unknown"
+            month_str = "Unknown"
+    else:
+        date_str = "Unknown"
+        month_str = "Unknown"
 
     table_rows.append({
         "Severity": severity_val,
         "Incident Type": inc_type,
         "Actor": actor_name,
         "Risk Score": risk_score,
-        "Time": time_str
+        "Date": date_str,
+        "Month": month_str
     })
 
     # Build a detailed explanation list for the Incident Details panel.
@@ -338,7 +388,7 @@ for idx, inc in enumerate(filtered_incidents, start=1):
         adv_details.append(f"Regions: {', '.join(regions.keys())}")
 
     incident_details.append({
-        "Dropdown Label": f"{inc_title} ({time_str})",
+        "Dropdown Label": f"{inc_title} ({date_str})",
         "Incident Name": inc_type,
         "Severity": severity_val,
         "Actor": actor_name,
@@ -351,8 +401,26 @@ for idx, inc in enumerate(filtered_incidents, start=1):
 # If no incidents match the filters, create an empty DataFrame with the expected columns.
 if table_rows:
     incident_table_data = pd.DataFrame(table_rows)
+
+    # Sort incidents by newest date first
+    try:
+        incident_table_data["Date_dt"] = pd.to_datetime(
+            [inc.get("first_seen", "") for inc in filtered_incidents],
+            errors="coerce"
+        )
+
+        incident_table_data = incident_table_data.sort_values(
+            by="Date_dt",
+            ascending=False
+        )
+
+        incident_table_data = incident_table_data.drop(columns=["Date_dt"])
+
+    except Exception:
+        pass
+
 else:
-    incident_table_data = pd.DataFrame(columns=["Severity", "Incident Type", "Actor", "Risk Score", "Time"])
+    incident_table_data = pd.DataFrame(columns=["Severity", "Incident Type", "Actor", "Risk Score", "Date", "Month"])
 
 with col_display:
 
@@ -365,7 +433,7 @@ with col_display:
             st.subheader("Dashboard View")
 
             total_incidents = total_incidents_count
-            new_incidents = new_incidents_count
+            last_two_weeks_incidents = last_two_weeks_count
             high_severity = high_severity_count
             top_actor = top_actor_name
 
@@ -389,8 +457,8 @@ with col_display:
                     st.markdown(
                         f"""
                         <div style='text-align: center;'>
-                            <div style='font-size: 20px; font-weight: 600;'>New Incidents</div>
-                            <div style='font-size: 42px; font-weight: 700;'>{new_incidents}</div>
+                            <div style='font-size: 20px; font-weight: 600;'>Last Two Weeks Incidents</div>
+                            <div style='font-size: 42px; font-weight: 700;'>{last_two_weeks_incidents}</div>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -442,12 +510,19 @@ with col_display:
                         }
                     )
 
+                    # Let the chart inherit Streamlit's active theme so it remains readable
+                    # in both light mode and dark mode.
                     fig.update_layout(
                         margin=dict(l=0, r=0, t=10, b=0),
                         height=250
                     )
 
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        theme="streamlit",
+                        key="severity_pie_chart"
+                    )
 
             with chart_col2:
                 with st.container(border=True):
@@ -462,33 +537,56 @@ with col_display:
                         color="Incident Type"
                     )
 
+                    # Let the chart inherit Streamlit's active theme so it remains readable
+                    # in both light mode and dark mode.
                     fig_bar.update_layout(
                         margin=dict(l=0, r=0, t=10, b=0),
                         height=250,
                         showlegend=False
                     )
 
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(
+                        fig_bar,
+                        use_container_width=True,
+                        theme="streamlit",
+                        key="incident_type_bar_chart"
+                    )
 
             with chart_col3:
                 with st.container(border=True):
-                    st.markdown("### Incidents Over Time")
+                    st.markdown("### Incidents by Month")
 
-                    incident_time_data = incident_table_data["Time"].value_counts().sort_index().reset_index()
-                    incident_time_data.columns = ["Time", "Count"]
+                    # Count incidents per month
+                    incident_time_data = incident_table_data["Month"].value_counts().reset_index()
+                    incident_time_data.columns = ["Month", "Count"]
+
+                    # Convert "Time" (e.g., "Mar 2026") back to datetime for correct sorting
+                    try:
+                        incident_time_data["Month_dt"] = pd.to_datetime(incident_time_data["Month"], format="%b %Y")
+                        incident_time_data = incident_time_data.sort_values("Month_dt")
+                        incident_time_data = incident_time_data.drop(columns=["Month_dt"])
+
+                    except Exception:
+                        pass
 
                     # Provide a fallback row so the line chart can still render
                     # cleanly when there is no matching filtered data.
                     if incident_time_data.empty:
-                        incident_time_data = pd.DataFrame({"Time": ["00:00"], "Count": [0]})
+                        incident_time_data = pd.DataFrame({"Month": ["Unknown"], "Count": [0]})
 
                     fig_line = px.line(
                         incident_time_data,
-                        x="Time",
+                        x="Month",
                         y="Count",
                         markers=True
                     )
 
+                    fig_line.update_layout(
+                        xaxis=dict(type='category')
+                    )
+
+                    # Let the chart inherit Streamlit's active theme so it remains readable
+                    # in both light mode and dark mode.
                     fig_line.update_layout(
                         margin=dict(l=0, r=0, t=10, b=0),
                         height=250,
@@ -496,7 +594,12 @@ with col_display:
                         yaxis_title=None
                     )
 
-                    st.plotly_chart(fig_line, use_container_width=True)
+                    st.plotly_chart(
+                        fig_line,
+                        use_container_width=True,
+                        theme="streamlit",
+                        key="incidents_over_time_line_chart"
+                    )
 
             st.write("")
 
