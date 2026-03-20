@@ -387,7 +387,7 @@ for idx, inc in enumerate(filtered_incidents, start=1):
         adv_details.append(f"Regions: {', '.join(regions.keys())}")
 
     incident_details.append({
-        "Dropdown Label": f"{inc_title} ({date_str})",
+        "Dropdown Label": f"{inc_type} | {actor_name} | {date_str}",
         "Incident Name": inc_type,
         "Severity": severity_val,
         "Actor": actor_name,
