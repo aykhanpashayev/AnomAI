@@ -367,8 +367,7 @@ for idx, inc in enumerate(filtered_incidents, start=1):
         "Incident Type": inc_type,
         "Actor": actor_name,
         "Risk Score": risk_score,
-        "Date": date_str,
-        "Month": month_str
+        "Date": date_str
     })
 
     # Build a detailed explanation list for the Incident Details panel.
@@ -420,7 +419,7 @@ if table_rows:
         pass
 
 else:
-    incident_table_data = pd.DataFrame(columns=["Severity", "Incident Type", "Actor", "Risk Score", "Date", "Month"])
+    incident_table_data = pd.DataFrame(columns=["Severity", "Incident Type", "Actor", "Risk Score", "Date"])
 
 with col_display:
 
@@ -556,9 +555,35 @@ with col_display:
                 with st.container(border=True):
                     st.markdown("### Incidents by Month")
 
-                    # Count incidents per month
-                    incident_time_data = incident_table_data["Month"].value_counts().reset_index()
+                    # Build monthly incident counts directly from the filtered incidents
+                    month_values = []
+
+                    for inc in filtered_incidents:
+                        first_seen = inc.get("first_seen", "")
+                        if "T" in first_seen:
+                            try:
+                                dt = datetime.strptime(first_seen[:19], "%Y-%m-%dT%H:%M:%S")
+                                month_values.append(dt.strftime("%b %Y"))
+                            except ValueError:
+                                continue
+
+                    incident_time_data = pd.Series(month_values).value_counts().reset_index()
                     incident_time_data.columns = ["Month", "Count"]
+
+                    # Sort months chronologically instead of alphabetically
+                    try:
+                        incident_time_data["Month_dt"] = pd.to_datetime(
+                            incident_time_data["Month"],
+                            format="%b %Y"
+                        )
+                        incident_time_data = incident_time_data.sort_values("Month_dt")
+                        incident_time_data = incident_time_data.drop(columns=["Month_dt"])
+                    except Exception:
+                        pass
+
+                    # Fallback if no monthly data exists
+                    if incident_time_data.empty:
+                        incident_time_data = pd.DataFrame({"Month": ["Unknown"], "Count": [0]})
 
                     # Convert "Time" (e.g., "Mar 2026") back to datetime for correct sorting
                     try:
