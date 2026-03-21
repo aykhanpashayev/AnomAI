@@ -11,9 +11,12 @@ app = Flask(__name__)
 # -----------------------------------
 # Configuration
 # -----------------------------------
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", ".."))
+
 INCIDENTS_FILE = os.environ.get(
     "ANOMAI_INCIDENTS_FILE",
-    "out/incidents_api.json"
+    os.path.join(_PROJECT_ROOT, "out", "incidents_api.json")
 )
 
 # -----------------------------------

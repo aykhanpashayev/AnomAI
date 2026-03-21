@@ -17,6 +17,7 @@ Supports:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -179,6 +180,33 @@ def score_incident(det_type: str, severity: str, count: int, evidence: Any) -> i
 # Conversion
 # ------------------------------------------------------------
 
+def _generate_incident_id(det_inc: Dict[str, Any], detected_at: Optional[str]) -> str:
+    """
+    Generate a stable, unique incident ID from key fields when one is not
+    already present in the detector output.
+    Format: inc_<YYYYMMDD>_<6-char hash>
+    """
+    raw = det_inc.get("incident_id")
+    if raw is not None:
+        return str(raw)
+
+    fingerprint = "|".join([
+        str(det_inc.get("type") or ""),
+        str(det_inc.get("first_seen") or ""),
+        str(det_inc.get("last_seen") or ""),
+        str(det_inc.get("severity") or ""),
+        str(detected_at or ""),
+    ])
+    h = hashlib.sha1(fingerprint.encode()).hexdigest()[:6]
+
+    date_prefix = ""
+    ts = det_inc.get("first_seen") or detected_at or ""
+    if len(ts) >= 10:
+        date_prefix = ts[:10].replace("-", "")
+
+    return f"inc_{date_prefix}_{h}"
+
+
 def convert_one(det_inc: Dict[str, Any], detected_at: Optional[str]) -> Dict[str, Any]:
     det_type = str(det_inc.get("type") or "unknown")
     severity = str(det_inc.get("severity") or "low").lower()
@@ -186,11 +214,14 @@ def convert_one(det_inc: Dict[str, Any], detected_at: Optional[str]) -> Dict[str
     evidence = det_inc.get("evidence") or {}
     samples = det_inc.get("samples") or []
 
+    # Preserve full by_actor dict for the UI (multi-actor support)
+    by_actor: Dict[str, int] = {}
+    if isinstance(evidence, dict) and isinstance(evidence.get("by_actor"), dict):
+        by_actor = evidence["by_actor"]
+
     actor = None
-    if isinstance(evidence, dict):
-        by_actor = evidence.get("by_actor")
-        if isinstance(by_actor, dict) and by_actor:
-            actor = max(by_actor.items(), key=lambda kv: kv[1])[0]
+    if by_actor:
+        actor = max(by_actor.items(), key=lambda kv: kv[1])[0]
 
     if not actor and samples:
         actor = samples[0].get("actor")
@@ -215,14 +246,15 @@ def convert_one(det_inc: Dict[str, Any], detected_at: Optional[str]) -> Dict[str
         age_seconds = max(0, int(delta.total_seconds()))
 
     api_obj = {
-        "incident_id": det_inc.get("incident_id"),
+        "incident_id": _generate_incident_id(det_inc, detected_at),
         "incident_type": map_incident_type(det_type),
         "actor": actor,
+        "by_actor": by_actor,
         "timestamp_start": ts_start,
         "timestamp_end": ts_end,
-        "timestamp_detected": detected_at,   # NEW (wrapper generated_at)
-        "age_seconds": age_seconds,          # NEW (int seconds or null)
-        "is_new": is_new,                    # NEW (pass-through for UI badge)
+        "timestamp_detected": detected_at,
+        "age_seconds": age_seconds,
+        "is_new": is_new,
         "severity": severity,
         "rule_score": rule_score,
         "final_risk_score": final_risk_score,
@@ -233,6 +265,7 @@ def convert_one(det_inc: Dict[str, Any], detected_at: Optional[str]) -> Dict[str
         },
         "evidence": {
             "count": count,
+            "by_actor": by_actor,
             "window_minutes": evidence.get("window_minutes") if isinstance(evidence, dict) else None,
             "window_seconds": (
                 to_int(evidence.get("window_minutes"), 0) * 60
