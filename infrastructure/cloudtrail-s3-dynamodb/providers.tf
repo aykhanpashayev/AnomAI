@@ -12,5 +12,5 @@ terraform {
 # AWS provider configuration
 # Terraform will automatically use AWS credentials from environment variables
 provider "aws" {
-  region = "us-east-1"  # Change if you want another region
+  region = "us-east-2"  # Change if you want another region
 }
