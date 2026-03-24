@@ -1,7 +1,230 @@
+# =============================================================
+# AnomAI — .gitignore
+# Python · Flask · Streamlit · AWS · VS Code · macOS · Linux
+# =============================================================
 
-# Terraform (ignore everywhere)
-**/.terraform/
-**/.terraform.lock.hcl
-**/terraform.tfstate
-**/terraform.tfstate.backup
-**/*.tfvars
+
+# -------------------------------------------------------------
+# Secrets & credentials — NEVER commit these
+# -------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+aws_credentials
+credentials
+secrets.toml
+.streamlit/secrets.toml
+
+
+# -------------------------------------------------------------
+# Python
+# -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+MANIFEST
+
+# Installers
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.lcov
+nosetests.xml
+test-results/
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+.pyright/
+.ruff_cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# pyenv
+.python-version
+
+
+# -------------------------------------------------------------
+# Project-specific outputs (runtime files, not source)
+# -------------------------------------------------------------
+out/
+*.json
+!package.json          # keep if you ever add Node tooling
+!package-lock.json
+
+# Specifically the files this project used to generate
+incidents.json
+incidents_api.json
+detection_state.json
+
+# Temp files from the old detection pipeline
+temp_doc
+
+
+# -------------------------------------------------------------
+# AWS
+# -------------------------------------------------------------
+# Local AWS config (credentials live in ~/.aws — not in repo)
+.aws/
+
+# CDK / SAM / CloudFormation outputs
+cdk.out/
+cdk.context.json
+samconfig.toml
+*.cfn.json
+*.cfn.yaml
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+
+# State files — contain real resource IDs and sensitive output values
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+
+# Tfvars — often contain secrets (account IDs, ARNs, keys)
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+!terraform.tfvars.example
+
+# Plan files — can contain sensitive data in binary form
+*.tfplan
+*.plan
+
+# Override files — local developer overrides, not for sharing
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+
+# -------------------------------------------------------------
+# Streamlit
+# -------------------------------------------------------------
+.streamlit/secrets.toml   # already above, belt-and-suspenders
+.streamlit/config.toml    # keep this if you want to share config,
+                           # remove the comment and uncomment below to ignore:
+# .streamlit/
+
+
+# -------------------------------------------------------------
+# Flask / web
+# -------------------------------------------------------------
+instance/
+.webassets-cache
+flask_session/
+
+
+# -------------------------------------------------------------
+# Docker (if added later)
+# -------------------------------------------------------------
+.docker/
+docker-compose.override.yml
+
+
+# -------------------------------------------------------------
+# VS Code
+# -------------------------------------------------------------
+# Ignore personal/local VS Code files
+.vscode/launch.json         # personal debug configs
+.vscode/tasks.json          # local task runner configs
+.history/                   # Local History extension
+*.vsix                      # packaged extensions
+
+# Keep these — useful to share with teammates
+!.vscode/
+!.vscode/extensions.json    # recommended extensions list
+!.vscode/settings.json      # shared workspace settings
+!.vscode/snippets/          # shared code snippets
+
+# Workspace files — usually personal, ignore unless intentional
+*.code-workspace
+
+
+# -------------------------------------------------------------
+# macOS
+# -------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+
+
+# -------------------------------------------------------------
+# Linux
+# -------------------------------------------------------------
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+
+# -------------------------------------------------------------
+# Windows (just in case)
+# -------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+
+# -------------------------------------------------------------
+# Logs
+# -------------------------------------------------------------
+*.log
+logs/
+log/
+*.log.*
+
+
+# -------------------------------------------------------------
+# Editor swap / backup files
+# -------------------------------------------------------------
+*.swp
+*.swo
+*.bak
+*.orig
+*.tmp
+*~
