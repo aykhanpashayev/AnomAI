@@ -1,0 +1,5 @@
+# scripts/new_automated_detection/requirements.txt
+# Run: pip install -r requirements.txt
+
+boto3>=1.34.0
+botocore>=1.34.0

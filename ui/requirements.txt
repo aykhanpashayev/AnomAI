@@ -1,0 +1,9 @@
+# scripts/ui/requirements.txt
+# Run: pip install -r requirements.txt
+
+streamlit>=1.32.0
+plotly>=5.20.0
+pandas>=2.0.0
+requests>=2.31.0
+google-genai>=0.5.0
+python-dotenv>=1.0.0

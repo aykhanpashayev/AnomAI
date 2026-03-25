@@ -1,62 +1,118 @@
-# S3 → Lambda (trigger) → normalized output DynamoDB
+# Auto-Ingestion
 
-## Date 1/20/2026
-As we tested the parse script for getting normalized cloud trail api logs, time has come to make this process automatically run, S3 triggers Lambda and Lambda upload the parsed logs to Dynamo DB tables that will be used later.
+Lambda function that automatically ingests CloudTrail logs into DynamoDB.
+Triggered by S3 whenever CloudTrail delivers a new log file — typically
+every 5–15 minutes.
 
-## We will do this whole process using AWS CLI, AWS Docs and AI
+---
 
-## Step 1.1: Create a trust policy file. I named it trust-lambda.json allows lambda assume the role
+## How it works
 
-## Step 1.2: Creating IAM Role 
 ```
+CloudTrail delivers .json.gz log file
+              │
+              ▼
+       S3 Bucket (anomai-cloudtrail-logs-dev)
+              │
+              │  S3 ObjectCreated trigger
+              ▼
+    Lambda: anomai-ingest-cloudtrail
+              │
+              ├── Decompresses the .json.gz file
+              ├── Normalizes each CloudTrail record
+              ├── Masks access key IDs
+              ├── Filters out its own activity (prevents feedback loops)
+              ├── Adds day_bucket field (YYYY-MM-DD) for efficient scanning
+              └── Batch-writes to DynamoDB (anomai_events)
+```
+
+---
+
+## Files
+
+| File | Description |
+|---|---|
+| `lambda/ingest/handler.py` | Lambda entry point — reads from S3, writes to DynamoDB |
+| `lambda/ingest/normalize.py` | Extracts and normalizes fields from raw CloudTrail records |
+| `lambda/ingest/s3-notification.json` | S3 bucket notification config — wires S3 trigger to Lambda |
+| `policy-anomai-ingest.json` | IAM inline policy — S3 read + DynamoDB write |
+| `trust-lambda.json` | IAM trust policy — allows Lambda service to assume the role |
+
+---
+
+## DynamoDB fields written per event
+
+| Field | Source | Description |
+|---|---|---|
+| `event_id` | CloudTrail `eventID` (PK) | Unique identifier for the event |
+| `actor` | Resolved from `userIdentity` | IAM user or role session name |
+| `eventTime` | CloudTrail `eventTime` | ISO-8601 timestamp |
+| `day_bucket` | Derived from `eventTime` | `YYYY-MM-DD` — used by the detection pipeline for efficient time-range scans |
+| `eventName` | CloudTrail `eventName` | AWS API call (e.g. `CreateUser`) |
+| `eventSource` | CloudTrail `eventSource` | AWS service (e.g. `iam.amazonaws.com`) |
+| `awsRegion` | CloudTrail `awsRegion` | Region where the call was made |
+| `sourceIPAddress` | CloudTrail `sourceIPAddress` | Source IP of the caller |
+| `event_json` | Full normalized record | Complete event stored as a JSON string |
+
+Access key IDs are masked (`****************XXXX`) before being stored.
+
+---
+
+## Deploy
+
+This component is deployed via AWS CLI. Run each command from inside
+`infrastructure/auto-ingestion/`.
+
+### Step 1 — Create the IAM role
+
+```bash
 aws iam create-role \
   --role-name anomai-ingest-lambda-role \
   --assume-role-policy-document file://trust-lambda.json
 ```
-## Step 1.3 Attaching basic CloudWatch logging policy (managed)
-```
+
+Attach the AWS-managed CloudWatch logging policy:
+
+```bash
 aws iam attach-role-policy \
   --role-name anomai-ingest-lambda-role \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 ```
 
-## Step 1.4 Creating an inline policy for S3 read/write. I named policy-anomai-ingest
+Attach the inline policy for S3 read and DynamoDB write:
 
-## Step 1.5 Attaching this inline policy to our role (anomai-ingest-lambda-role)
-```
-aws iam put-role-policy \
+```bash
 aws iam put-role-policy \
   --role-name anomai-ingest-lambda-role \
   --policy-name anomai-ingest-s3-ddb \
   --policy-document file://policy-anomai-ingest.json
 ```
 
-## Step 1.6 let's get role ARN we will need in step 2
-```
+Get the role ARN for the next step:
+
+```bash
 aws iam get-role \
   --role-name anomai-ingest-lambda-role \
   --query 'Role.Arn' \
   --output text
 ```
 
-## Step 2.1 Creating normalize.py for lambda function and we will have seperate folder for this ofc, lambda/ingest
+### Step 2 — Deploy the Lambda function
 
-## Step 2.2 Creating handler.py for writing to the dynamodb
+Zip the handler and normalizer together:
 
-## Step 2.3 Zipping both normalize and handler together
-```
+```bash
+cd lambda/ingest/
 zip -r function.zip handler.py normalize.py
 ```
 
-## Step 2.4 Creating the Lambda function
-Setting variables
-```
+Create the function (replace `<ROLE_ARN>` with the ARN from Step 1):
+
+```bash
 export FUNCTION_NAME=anomai-ingest-cloudtrail
-export ROLE_ARN=arn:aws:iam::643766343043:role/anomai-ingest-lambda-role
+export ROLE_ARN=<ROLE_ARN>
 export AWS_REGION=us-east-2
-```
-Creating the function
-```
+
 aws lambda create-function \
   --function-name "$FUNCTION_NAME" \
   --runtime python3.11 \
@@ -68,87 +124,96 @@ aws lambda create-function \
   --environment "Variables={EVENTS_TABLE=anomai_events,INPUT_PREFIX=AWSLogs/,MASK_KEYS=true,KEEP_HEAVY_FIELDS=false}"
 ```
 
-## Step 2.5 Verify
-```
-aws lambda get-function --function-name "$FUNCTION_NAME" --query 'Configuration.State' --output text
-```
-If it says Active we are fine
+Verify it deployed:
 
-## Step 3.1 Allow S3 to invoke the Lambda
-
-Setting up the variables
+```bash
+aws lambda get-function \
+  --function-name "$FUNCTION_NAME" \
+  --query 'Configuration.State' \
+  --output text
+# Expected: Active
 ```
-export AWS_REGION=us-east-2
+
+### Step 3 — Wire the S3 trigger
+
+Allow S3 to invoke the Lambda:
+
+```bash
 export BUCKET=anomai-cloudtrail-logs-dev
-export FUNCTION_NAME=anomai-ingest-cloudtrail
-```
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-Getting lambda ARN
-```
 export FUNCTION_ARN=$(aws lambda get-function \
   --function-name "$FUNCTION_NAME" \
   --query 'Configuration.FunctionArn' \
   --output text)
-echo "$FUNCTION_ARN"
-```
 
-Adding permissions
-```
 aws lambda add-permission \
   --function-name "$FUNCTION_NAME" \
   --statement-id s3-invoke-anomai-ingest \
   --action lambda:InvokeFunction \
   --principal s3.amazonaws.com \
   --source-arn "arn:aws:s3:::$BUCKET" \
-  --source-account 643766343043
+  --source-account "$ACCOUNT_ID"
 ```
 
-## Step 3.2 Setting S3 bucket notification config
-Creating the config file which will trigger lamda when logs will be uploaded to s3 bucket. I named it s3-notification
+Apply the S3 bucket notification (update `s3-notification.json` with your
+Lambda ARN first):
 
-Then we will apply that to the bucket
-```
+```bash
 aws s3api put-bucket-notification-configuration \
   --bucket "$BUCKET" \
   --notification-configuration file://s3-notification.json
 ```
 
-Verify it did apply
-```
+Verify:
+
+```bash
 aws s3api get-bucket-notification-configuration --bucket "$BUCKET"
 ```
 
-## Step 4 is Test Stage nothing specifically needs to be done here any type of API actions already recording and uploading to the bucket we just need to do some API actions like describe instances, list buckets and etc. Wait 5-10 mins then final check
-```
+### Step 4 — Verify end-to-end
+
+Wait 5–10 minutes for CloudTrail to deliver a new log file, then check
+that events are appearing in DynamoDB:
+
+```bash
 aws dynamodb scan --table-name anomai_events --max-items 5
 ```
 
-## Test Results:
-```
-Lambda function works pretty good, one issue it's also logging it's own function every time creating loop that should be fixed
-```
+---
 
-## Step 1. Handler.py updated
+## Updating the Lambda code
 
-## Step 2. Rezipping and updating the lambda
+After making changes to `handler.py` or `normalize.py`:
 
-```
+```bash
+cd lambda/ingest/
 zip -r function.zip handler.py normalize.py
-```
 
-```
 aws lambda update-function-code \
   --function-name anomai-ingest-cloudtrail \
   --zip-file fileb://function.zip
 ```
 
-## Step 3. Testing once again making sure it doesn't log itself
-```
-aws dynamodb scan \
-  --table-name anomai_events \
-  --filter-expression "actor = :a OR contains(event_json, :r)" \
-  --expression-attribute-values '{":a":{"S":"anomai-ingest-cloudtrail"},":r":{"S":"anomai-ingest-lambda-role"}}' \
-  --max-items 10
-```
+---
 
-## Success!
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `EVENTS_TABLE` | `anomai_events` | DynamoDB table to write events to |
+| `INPUT_PREFIX` | `AWSLogs/` | Only process S3 keys under this prefix |
+| `MASK_KEYS` | `true` | Mask access key IDs before storing |
+| `KEEP_HEAVY_FIELDS` | `false` | Drop `requestParameters` and `responseElements` to save space |
+| `SELF_ROLE_NAME` | `anomai-ingest-lambda-role` | Role name to filter out of ingestion (prevents feedback loops) |
+| `SELF_SESSION_NAME` | `anomai-ingest-cloudtrail` | Session name to filter out of ingestion |
+
+---
+
+## IAM permissions
+
+| Permission | Resource | Purpose |
+|---|---|---|
+| `s3:GetObject` | `anomai-cloudtrail-logs-dev/AWSLogs/*` | Read CloudTrail log files |
+| `dynamodb:PutItem`, `BatchWriteItem`, `DescribeTable` | `anomai_events` | Write normalized events |
+| `logs:CreateLogGroup/Stream/Events` | CloudWatch | Lambda execution logs |

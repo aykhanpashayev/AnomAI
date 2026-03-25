@@ -1,0 +1,3 @@
+# infrastructure/demo-actors/terraform/terraform.tfvars.example
+aws_region  = "us-east-2"
+account_id  = "YOUR_ACCOUNT_ID"
