@@ -106,6 +106,8 @@ samconfig.toml
 # Terraform
 .terraform/
 .terraform.lock.hcl
+*.tfvars
+*.tfvars.json
 
 # State files — contain real resource IDs and sensitive output values
 terraform.tfstate
