@@ -1,4 +1,0 @@
-[2026-01-26T18:22:00Z] NOTE: AWS_PROFILE not set. Using default AWS CLI credentials/profile.
-[2026-01-26T18:22:00Z] Starting generate_activity.sh
-[2026-01-26T18:22:00Z] scenario=baseline duration=300s rate=60/min regions=us-east-1,us-west-2 bucket=anomai-cloudtrail-logs-dev log=./logs/activity_20260126_182200_baseline.log
-[2026-01-26T18:22:00Z] Scenario: baseline (safe/noisy read calls + light S3 list)

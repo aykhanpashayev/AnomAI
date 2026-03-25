@@ -80,6 +80,8 @@ out/
 *.json
 !package.json          # keep if you ever add Node tooling
 !package-lock.json
+logs/
+*.zip
 
 # Specifically the files this project used to generate
 incidents.json
