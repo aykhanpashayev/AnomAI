@@ -82,6 +82,8 @@ out/
 !package-lock.json
 logs/
 *.zip
+normalized.jsonl
+cloudtrail_sample.json
 
 # Specifically the files this project used to generate
 incidents.json
