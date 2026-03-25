@@ -10,3 +10,12 @@
 {"ts":"2026-02-03T14:20:03Z","scenario":"burst_api_calls","expected":"rate_anomaly","severity":"medium"}
 {"ts":"2026-02-03T14:21:21Z","scenario":"new_region","expected":"new_region_anomaly","severity":"high"}
 {"ts":"2026-02-03T14:22:37Z","scenario":"access_denied_spike","expected":"accessdenied_spike","severity":"high"}
+{"ts":"2026-03-25T16:54:47Z","scenario":"burst_api_calls","expected":"rate_anomaly","severity":"medium"}
+{"ts":"2026-03-25T16:58:30Z","scenario":"access_denied_spike","expected":"accessdenied_spike","severity":"high"}
+{"ts":"2026-03-25T17:04:02Z","scenario":"new_region","expected":"new_region_anomaly","severity":"high"}
+{"ts":"2026-03-25T17:16:44Z","scenario":"burst_api_calls","expected":"rate_anomaly","severity":"medium"}
+{"ts":"2026-03-25T17:21:32Z","scenario":"burst_api_calls","expected":"rate_anomaly","severity":"medium"}
+{"ts":"2026-03-25T17:26:47Z","scenario":"baseline","expected":"none","severity":"low"}
+{"ts":"2026-03-25T17:28:07Z","scenario":"burst_api_calls","expected":"rate_anomaly","severity":"medium"}
+{"ts":"2026-03-25T17:29:24Z","scenario":"new_region","expected":"new_region_anomaly","severity":"high"}
+{"ts":"2026-03-25T17:30:39Z","scenario":"access_denied_spike","expected":"accessdenied_spike","severity":"high"}
