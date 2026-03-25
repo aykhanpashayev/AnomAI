@@ -84,6 +84,7 @@ logs/
 *.zip
 normalized.jsonl
 cloudtrail_sample.json
+*.jsonl
 
 # Specifically the files this project used to generate
 incidents.json
