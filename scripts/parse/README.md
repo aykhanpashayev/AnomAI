@@ -1,112 +1,104 @@
-# How to run the parse script?
+# CloudTrail Parser
 
-```
-python3 parse_cloudtrail.py 643766343043_CloudTrail_us-west-1_20260119T1615Z_ZRnrQ676zA0RlyWQ.json.gz 
+Development utility for parsing raw CloudTrail `.json.gz` log files into
+normalized JSONL. Used during early development to understand the CloudTrail
+log format and validate the normalization logic before it was built into the
+ingest Lambda.
+
+> **Note:** In production, this parsing happens automatically inside the
+> ingest Lambda (`infrastructure/auto-ingestion/`). This script is useful
+> for local inspection and debugging of raw CloudTrail files.
+
+---
+
+## Files
+
+| File | Description |
+|---|---|
+| `parse_cloudtrail.py` | Parser script — reads `.json.gz` or `.json` files, outputs normalized JSONL |
+| `cloudtrail_sample.json` | Small sample CloudTrail file for testing |
+
+---
+
+## Usage
+
+```bash
+# Parse a single file
+python3 parse_cloudtrail.py path/to/cloudtrail.json.gz
+
+# Parse all CloudTrail files in a folder
+python3 parse_cloudtrail.py path/to/logs/
+
+# Custom output path
+python3 parse_cloudtrail.py cloudtrail_sample.json -o my_output.jsonl
+
+# Keep requestParameters and responseElements (dropped by default to save space)
+python3 parse_cloudtrail.py cloudtrail_sample.json --keep-heavy-fields
+
+# Print more sample events to stdout (default: 3)
+python3 parse_cloudtrail.py cloudtrail_sample.json --print-sample 10
+
+# Skip access key masking (not recommended)
+python3 parse_cloudtrail.py cloudtrail_sample.json --no-mask-keys
 ```
 
-# What it creates?
+---
 
-```
-It creates a json file named normalized check it out it's on same folder
-```
+## CLI flags
 
-# What it returns?
+| Flag | Default | Description |
+|---|---|---|
+| `input` | — | Path to a `.json` / `.json.gz` file, or a folder |
+| `-o`, `--out` | `normalized.jsonl` | Output JSONL file path |
+| `--keep-heavy-fields` | off | Keep `requestParameters` and `responseElements` |
+| `--no-mask-keys` | off | Do not mask `accessKeyId` values |
+| `--print-sample` | `3` | Number of normalized events to print to stdout |
 
-```
---- Sample normalized events ---
+---
+
+## Output format
+
+Each line in the output JSONL file is one normalized event:
+
+```json
 {
   "userType": "AssumedRole",
-  "userArn": "arn:aws:sts::643766343043:assumed-role/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a/Aykhan",
-  "accountId": "643766343043",
-  "principalId": "AROAZLY3W2WBRTBIFDNWJ:Aykhan",
-  "accessKeyId": "****************RSCT",
-  "sessionIssuerArn": "arn:aws:iam::643766343043:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "roleName": "AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "sessionName": "Aykhan",
-  "userName": null,
-  "actor": "Aykhan",
+  "userArn": "arn:aws:sts::<account-id>:assumed-role/<role>/<session>",
+  "accountId": "<account-id>",
+  "accessKeyId": "****************XXXX",
+  "roleName": "AWSReservedSSO_AnomAIAdmin_...",
+  "sessionName": "Alice",
+  "actor": "Alice",
   "mfaAuthenticated": false,
   "eventName": "DescribeRegions",
   "eventSource": "ec2.amazonaws.com",
   "eventType": "AwsApiCall",
   "readOnly": true,
-  "awsRegion": "us-west-1",
+  "awsRegion": "us-east-2",
   "eventTime": "2026-01-19T16:10:31Z",
-  "eventID": "314baed6-b83b-49c0-9d82-c27d991377b1",
-  "requestID": "ac90a323-2d6d-489f-a8bf-3b26a61f28e1",
-  "sourceIPAddress": "131.94.186.33",
-  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-  "vpcEndpointId": null,
+  "eventID": "314baed6-...",
+  "sourceIPAddress": "1.2.3.4",
   "errorCode": null,
   "errorMessage": null,
-  "additionalEventData": null,
-  "tlsDetails": {
-    "tlsVersion": "TLSv1.3",
-    "cipherSuite": "TLS_AES_128_GCM_SHA256",
-    "clientProvidedHostHeader": "ec2.us-west-1.amazonaws.com"
-  }
+  "tlsDetails": { "tlsVersion": "TLSv1.3", ... }
 }
-{
-  "userType": "AssumedRole",
-  "userArn": "arn:aws:sts::643766343043:assumed-role/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a/Aykhan",
-  "accountId": "643766343043",
-  "principalId": "AROAZLY3W2WBRTBIFDNWJ:Aykhan",
-  "accessKeyId": "****************44OK",
-  "sessionIssuerArn": "arn:aws:iam::643766343043:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "roleName": "AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "sessionName": "Aykhan",
-  "userName": null,
-  "actor": "Aykhan",
-  "mfaAuthenticated": false,
-  "eventName": "ListNotificationHubs",
-  "eventSource": "notifications.amazonaws.com",
-  "eventType": "AwsApiCall",
-  "readOnly": true,
-  "awsRegion": "us-west-1",
-  "eventTime": "2026-01-19T16:10:32Z",
-  "eventID": "f2586334-89ec-4893-b17e-d2c164de47a0",
-  "requestID": "b7d7b521-17ea-451d-b80d-16cb24a85d2f",
-  "sourceIPAddress": "131.94.186.33",
-  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-  "vpcEndpointId": null,
-  "errorCode": null,
-  "errorMessage": null,
-  "additionalEventData": null,
-  "tlsDetails": null
-}
-{
-  "userType": "AssumedRole",
-  "userArn": "arn:aws:sts::643766343043:assumed-role/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a/Aykhan",
-  "accountId": "643766343043",
-  "principalId": "AROAZLY3W2WBRTBIFDNWJ:Aykhan",
-  "accessKeyId": "****************QRTB",
-  "sessionIssuerArn": "arn:aws:iam::643766343043:role/aws-reserved/sso.amazonaws.com/us-east-2/AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "roleName": "AWSReservedSSO_AnomAIAdmin_aa59d952f393cb6a",
-  "sessionName": "Aykhan",
-  "userName": null,
-  "actor": "Aykhan",
-  "mfaAuthenticated": false,
-  "eventName": "LookupEvents",
-  "eventSource": "cloudtrail.amazonaws.com",
-  "eventType": "AwsApiCall",
-  "readOnly": true,
-  "awsRegion": "us-west-1",
-  "eventTime": "2026-01-19T16:10:31Z",
-  "eventID": "bc802edd-ea19-4ba6-864b-27ee2ad4c4a6",
-  "requestID": "8162be34-3321-4667-b136-abb331f1570d",
-  "sourceIPAddress": "131.94.186.33",
-  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-  "vpcEndpointId": null,
-  "errorCode": null,
-  "errorMessage": null,
-  "additionalEventData": null,
-  "tlsDetails": {
-    "tlsVersion": "TLSv1.3",
-    "cipherSuite": "TLS_AES_128_GCM_SHA256",
-    "clientProvidedHostHeader": "cloudtrail.us-west-1.amazonaws.com"
-  }
-}
+```
 
+### Key fields
+
+| Field | Description |
+|---|---|
+| `actor` | Best-effort human identity — resolved from `userName`, session name, or principal ID. This is what the detection pipeline baselines on |
+| `accessKeyId` | Masked by default — last 4 characters only |
+| `requestParameters` / `responseElements` | Dropped by default — can double the record size. Use `--keep-heavy-fields` to retain |
+
+---
+
+## Console summary
+
+After parsing, the script prints a summary to stdout:
+
+```
 --- Summary ---
 Total normalized events: 10
 Files with errors: 0
@@ -114,19 +106,14 @@ Files with errors: 0
 Top eventSource:
   cloudtrail.amazonaws.com: 8
   ec2.amazonaws.com: 1
-  notifications.amazonaws.com: 1
 
 Top eventName:
   LookupEvents: 2
   DescribeTrails: 2
-  GetTrailStatus: 2
-  DescribeRegions: 1
-  ListNotificationHubs: 1
-  ListTrails: 1
-  ListEventDataStores: 1
+  ...
 
 Top actor:
-  Aykhan: 10
+  Alice: 10
 
 Wrote JSONL: normalized.jsonl
 Heavy fields: DROPPED (requestParameters/responseElements)
