@@ -240,50 +240,40 @@ research notes.
 ### Research Flow
 
 ```
-### Research Flow (Architecture Style)
+Week 1: Behavior Foundations
+        │
+        ▼
+Week 2: Normalization Pipeline
+        │
+        ▼
+Week 3: Rule-Based Features
+        │
+        ▼
+Week 4: Embedding & Model Research
+        │
+        ▼
+Week 5: Final Scoring Logic
+        │
+        ▼
+Week 6: API Specification
+        │
+        ▼
+Week 7: Validation & Documentation
+        │
+        ▼
+Week 8: UI Alignment
+        │
+        ▼
+Week 9: Error Handling & Robustness
+        │
+        ▼
+Week 10: Documentation Freeze
+        │
+        ▼
+Week 11: UI Integration & Final Polish
+
+See [AnomalyResearch.md](./AnomalyResearch.md) for the full breakdown.
 
 ```
-┌──────────────────────────────┐
-│ Week 1: Behavior Foundations  │
-└───────────────┬──────────────┘
-                ▼
-┌────────────────────────────────────────┐
-│ Week 2: Normalization Pipeline         │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 3: Rule-Based Features            │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 4: Embedding & Model Research     │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 5: Final Scoring Logic            │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 6: API Specification              │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 7: Validation & Documentation     │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 8: UI Alignment                   │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 9: Error Handling & Robustness    │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 10: Documentation Freeze          │
-└────────────────┬───────────────────────┘
-                 ▼
-┌────────────────────────────────────────┐
-│ Week 11: UI Integration & Final Polish │
-└────────────────────────────────────────┘
-```
+
+
