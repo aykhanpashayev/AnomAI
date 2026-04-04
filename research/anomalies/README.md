@@ -1,5 +1,4 @@
 # **Anomaly Detection Research Notes (Week 1 → Week 11)**  
-**Author: Cheng Zhang**
 
 This document provides a complete, end‑to‑end record of the research, design, and development process behind the IAM anomaly detection system.  
 It consolidates all work from Week 1 through Week 11 into a single, coherent technical narrative suitable for engineering review, academic evaluation, and long‑term project maintenance.
